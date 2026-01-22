@@ -1,8 +1,8 @@
-# FRAS (Fleet Reporting and Analytics System) - Project Overview
+# fras (Fleet Reporting and Analytics System) - Project Overview
 
 ## 📋 Executive Summary
 
-The **Fleet Reporting and Analytics System (FRAS)** is a full-stack web application designed to manage, analyze, and report on fleet data. The system provides comprehensive analytics, data visualization, file upload capabilities, and automated reporting features.
+The **Fleet Reporting and Analytics System (fras)** is a full-stack web application designed to manage, analyze, and report on fleet data. The system provides comprehensive analytics, data visualization, file upload capabilities, and automated reporting features.
 
 ---
 
@@ -36,7 +36,7 @@ The **Fleet Reporting and Analytics System (FRAS)** is a full-stack web applicat
 ## 📁 Project Structure
 
 ```
-c:\Projects\FRAS\
+c:\Projects\fras\
 ├── backend/                    # FastAPI backend
 │   ├── app/
 │   │   ├── routers/           # API route handlers

@@ -23,7 +23,7 @@ class Settings(BaseSettings):
     allowed_origins: list[str] = ["http://localhost:3000", "http://localhost:5173"]
     
     # Application
-    app_name: str = "Fleet Reporting Backend"
+    app_name: str = "fras"
     app_version: str = "1.0.0"
     debug: bool = False
 

@@ -1,4 +1,4 @@
-# Fleet Reporting and Analytics System (FRAS) - Backend
+# Fleet Reporting and Analytics System (fras) - Backend
 
 A robust FastAPI backend for managing fleet data with file upload, authentication, and analytics capabilities.
 
