@@ -10,6 +10,8 @@ import api from '../services/api';
 import { useSnackbar } from 'notistack';
 import { useAuth } from '../context/AuthContext';
 
+import { PageSkeleton } from '../components/common/PageSkeleton';
+
 const StatCard = ({ title, value, icon, color, loading, trend }) => {
     const theme = useTheme();
     return (
@@ -119,6 +121,8 @@ const Dashboard = () => {
             maximumFractionDigits: 0,
         }).format(value || 0).replace('NGN', '₦');
     };
+
+    if (loading) return <PageSkeleton />;
 
     return (
         <Box>

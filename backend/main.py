@@ -10,15 +10,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.config import get_settings
 from app.database import Base, engine
 from app.routers import auth_routes, fleet_routes, file_routes, analytics_routes, audit_routes, settings_routes, notification_routes
-
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-)
-logger = logging.getLogger(__name__)
+from app.utils.limiter import init_limiter
+from app.utils.logging_config import setup_logging
 
 settings = get_settings()
+
+# Configure logging
+setup_logging(debug=settings.debug)
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
@@ -40,6 +39,9 @@ app = FastAPI(
     description="Fleet Reporting and Analytics System API",
     lifespan=lifespan
 )
+
+# Initialize Limiter
+init_limiter(app)
 
 # Add CORS middleware
 app.add_middleware(

@@ -50,10 +50,10 @@ def get_settings() -> Settings:
     
     # Warn if using default secret key
     if settings.secret_key == "dev-secret-key-change-in-production-use-env-variable":
-        print("⚠️  WARNING: Using default SECRET_KEY! Set SECRET_KEY in .env for production!")
+        print("WARNING: Using default SECRET_KEY! Set SECRET_KEY in .env for production!")
     
     # Warn if using SQLite
     if settings.database_url.startswith("sqlite"):
-        print("ℹ️  INFO: Using SQLite database for development")
+        print("INFO: Using SQLite database for development")
     
     return settings

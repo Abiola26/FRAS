@@ -15,12 +15,16 @@ from app.utils import generate_account_id
 from app.utils.email import send_password_reset_email
 from fastapi import BackgroundTasks
 
+from app.utils.limiter import limiter
+from fastapi import Request
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
 
 @router.post("/token", response_model=Token)
+@limiter.limit("5/minute")
 def login(
+    request: Request,
     form_data: OAuth2PasswordRequestForm = Depends(),
     db: Session = Depends(get_db)
 ):
@@ -71,7 +75,9 @@ def read_users_me(current_user: User = Depends(get_current_user)):
 
 
 @router.post("/signup", response_model=UserOut)
+@limiter.limit("3/minute")
 def register_user(
+    request: Request,
     user_in: UserCreate,
     db: Session = Depends(get_db)
 ):
@@ -240,15 +246,17 @@ def delete_user(
     db.commit()
     return {"message": "User deleted successfully"}
 @router.post("/password-reset-request")
+@limiter.limit("3/minute")
 async def password_reset_request(
-    request: PasswordResetRequest,
+    request: Request,
+    reset_request: PasswordResetRequest, # Renamed request to reset_request to avoid conflict with Request
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db)
 ):
     """
     Request a password reset token
     """
-    user = db.query(User).filter(User.email == request.email).first()
+    user = db.query(User).filter(User.email == reset_request.email).first()
     if not user:
         # For security, we usually return success even if email not found
         # but for this dev stage, let's be explicit

@@ -84,6 +84,7 @@ class DashboardStats(BaseModel):
     top_performing_fleet: str
     average_trip_revenue: float
     predicted_revenue: float | None = 0.0
+    revenue_trend_percent: float | None = 0.0 # Percentage change WoW
 
 
 class FilterOptions(BaseModel):
@@ -93,12 +94,21 @@ class FilterOptions(BaseModel):
     max_date: date | None
 
 
+class Anomaly(BaseModel):
+    """Schema for data anomalies"""
+    date: date
+    fleet: str
+    amount: float
+    reason: str
+    severity: str # "high", "medium", "low"
+
 class AnalyticsResponse(BaseModel):
     """Comprehensive analytics response"""
     records: list[FleetRecordOut]
     fleet_summaries: list[FleetSummary]
     daily_subtotals: list[DailySubtotal]
     dashboard_stats: DashboardStats
+    anomalies: list[Anomaly] = []
 
 class ChartDataPoint(BaseModel):
     label: str
@@ -109,6 +119,7 @@ class ChartResponse(BaseModel):
     revenue_trend: list[ChartDataPoint]
     revenue_by_fleet: list[ChartDataPoint]
     top_fleets: list[ChartDataPoint]
+    anomalies: list[Anomaly] = []
 
 
 class AuditLogOut(BaseModel):

@@ -8,7 +8,7 @@ from app.models import Base
 print("Creating database tables...")
 try:
     Base.metadata.create_all(bind=engine)
-    print("✓ Database tables created successfully")
+    print("SUCCESS: Database tables created successfully")
 except Exception as e:
-    print(f"✗ Error creating tables: {str(e)}")
+    print(f"FAILURE: Error creating tables: {str(e)}")
 

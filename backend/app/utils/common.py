@@ -72,8 +72,52 @@ class DataProcessor:
     """Handles data transformation and aggregation"""
     
     @staticmethod
+    def detect_anomalies(df: pd.DataFrame) -> List[Anomaly]:
+        """Detect unusual patterns in fleet data"""
+        from ..schemas import Anomaly
+        anomalies = []
+        
+        if df.empty:
+            return []
+            
+        # 1. Statistical Outliers per Fleet (Z-score approach)
+        for fleet in df['fleet'].unique():
+            fleet_df = df[df['fleet'] == fleet]
+            if len(fleet_df) < 5:
+                continue
+                
+            mean = fleet_df['amount'].mean()
+            std = fleet_df['amount'].std()
+            
+            if std == 0:
+                continue
+                
+            for _, row in fleet_df.iterrows():
+                z_score = abs(row['amount'] - mean) / std
+                if z_score > 3:
+                    anomalies.append(Anomaly(
+                        date=row['date'],
+                        fleet=row['fleet'],
+                        amount=row['amount'],
+                        reason=f"Significant deviation (Z-score: {z_score:.2f})",
+                        severity="high"
+                    ))
+                elif z_score > 2:
+                    anomalies.append(Anomaly(
+                        date=row['date'],
+                        fleet=row['fleet'],
+                        amount=row['amount'],
+                        reason="Unusual amount for this fleet",
+                        severity="medium"
+                    ))
+                    
+        return anomalies
+
+    @staticmethod
     def process_analytics(records: List[FleetRecord]) -> AnalyticsResponse:
         """Process raw records into full analytics response"""
+        from ..schemas import AnalyticsResponse, DashboardStats, FleetSummary, DailySubtotal, FleetRecordOut
+        
         if not records:
             return AnalyticsResponse(
                 records=[],
@@ -84,14 +128,14 @@ class DataProcessor:
                     total_records=0,
                     top_performing_fleet="N/A",
                     average_trip_revenue=0
-                )
+                ),
+                anomalies=[]
             )
 
         # Convert to DataFrame for easy processing
         data = []
         for r in records:
             fleet_name = r.fleet.strip().upper()
-            # Normalization now handled at upload (file_routes.py)
             if fleet_name == "2010M":
                 fleet_name = "2010"
                 
@@ -103,6 +147,7 @@ class DataProcessor:
             })
         
         df = pd.DataFrame(data)
+        df['date'] = pd.to_datetime(df['date']).dt.date
         
         # Fetch system config for dynamic calculations
         config = get_system_config()
@@ -113,8 +158,6 @@ class DataProcessor:
         for _, row in fleet_grp.iterrows():
             fleet_code = str(row['fleet']).strip()
             revenue = row['sum']
-            
-            # Calculate Remittance
             remittance = calculate_remittance(revenue, fleet_code, config)
                 
             summaries.append(FleetSummary(
@@ -124,17 +167,16 @@ class DataProcessor:
                 remittance=remittance
             ))
         
-        # 2. Daily Subtotals (Per Fleet) - This is for API response structure
-        # The Excel generator will do its own special formatting
+        # 2. Daily Subtotals
         daily_grp = df.groupby(["date", "fleet"])["amount"].agg(["sum", "count"]).reset_index()
-        daily_grp = daily_grp.sort_values(by=["date", "fleet"]) # Sort by date
+        daily_grp = daily_grp.sort_values(by=["date", "fleet"])
         
         subtotals = [
             DailySubtotal(date=row['date'], fleet=row['fleet'], daily_total=row['sum'], pax=row['count'])
             for _, row in daily_grp.iterrows()
         ]
         
-        # 3. Dashboard Stats
+        # 3. Dashboard Stats with Trend
         total_rev = df["amount"].sum()
         total_count = len(df)
         avg_rev = total_rev / total_count if total_count > 0 else 0
@@ -143,31 +185,41 @@ class DataProcessor:
         if not fleet_grp.empty:
             top_fleet = fleet_grp.loc[fleet_grp["sum"].idxmax(), "fleet"]
             
+        # Calculate Trend (Last 7 days vs Previous 7 days)
+        max_date = df['date'].max()
+        last_7_days = df[df['date'] >= (max_date - pd.Timedelta(days=7))]
+        prev_7_days = df[(df['date'] < (max_date - pd.Timedelta(days=7))) & (df['date'] >= (max_date - pd.Timedelta(days=14)))]
+        
+        rev_last = last_7_days['amount'].sum()
+        rev_prev = prev_7_days['amount'].sum()
+        
+        trend_percent = 0.0
+        if rev_prev > 0:
+            trend_percent = ((rev_last - rev_prev) / rev_prev) * 100
+            
         stats = DashboardStats(
             total_revenue=total_rev,
             total_records=total_count,
             top_performing_fleet=top_fleet,
-            average_trip_revenue=avg_rev
+            average_trip_revenue=avg_rev,
+            revenue_trend_percent=trend_percent
         )
         
-        # 4. Records
-        record_objs = [] 
-        # Re-map records to reflect normalized names if needed, 
-        # or just pass original records? User likely wants normalized view.
-        # We need to create 'FleetRecordOut' from the normalized dicts.
-        for d in data:
-            record_objs.append(FleetRecordOut(
-                id=d['id'], 
-                date=d['date'], 
-                fleet=d['fleet'], 
-                amount=d['amount']
-            ))
+        # 4. Anomalies
+        anomalies = DataProcessor.detect_anomalies(df)
+        
+        # 5. Records
+        record_objs = [
+            FleetRecordOut(id=d['id'], date=d['date'], fleet=d['fleet'], amount=d['amount'])
+            for d in data
+        ]
         
         return AnalyticsResponse(
             records=record_objs,
             fleet_summaries=summaries,
             daily_subtotals=subtotals,
-            dashboard_stats=stats
+            dashboard_stats=stats,
+            anomalies=anomalies
         )
 
 

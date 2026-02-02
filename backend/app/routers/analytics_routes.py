@@ -174,10 +174,18 @@ def get_analytics_charts(
     # Top Fleets is just the same data, sorted (which it already is)
     top_fleets = revenue_by_fleet[:15] # Limit to top 15
 
+    # 3. Anomalies
+    # We need the full record set for anomaly detection
+    records = base_query.all()
+    from app.utils import DataProcessor
+    analytics = DataProcessor.process_analytics(records)
+    anomalies = analytics.anomalies
+
     return ChartResponse(
         revenue_trend=revenue_trend,
         revenue_by_fleet=revenue_by_fleet,
-        top_fleets=top_fleets
+        top_fleets=top_fleets,
+        anomalies=anomalies
     )
 
 

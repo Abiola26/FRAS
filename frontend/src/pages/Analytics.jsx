@@ -30,6 +30,8 @@ ChartJS.register(
     ArcElement
 );
 
+import { PageSkeleton } from '../components/common/PageSkeleton';
+
 const Analytics = () => {
     const [startDate, setStartDate] = useState('');
     const [endDate, setEndDate] = useState('');
@@ -142,7 +144,17 @@ const Analytics = () => {
             data: chartsData.top_fleets.map(s => s.value),
             backgroundColor: '#60a5fa',
             borderRadius: 4,
+            hoverBackgroundColor: '#2563eb'
         }]
+    };
+
+    const handleChartClick = (event, elements) => {
+        if (elements && elements.length > 0) {
+            const index = elements[0].index;
+            const fleetName = chartsData.top_fleets[index].label;
+            setSelectedFleet(fleetName);
+            enqueueSnackbar(`Filtered by Fleet: ${fleetName}`, { variant: 'info' });
+        }
     };
 
     // Chart Options
@@ -276,11 +288,29 @@ const Analytics = () => {
             </Paper>
 
             {loading ? (
-                <Box sx={{ display: 'flex', justifyContent: 'center', p: 10 }}>
-                    <CircularProgress />
-                </Box>
+                <PageSkeleton />
             ) : (
                 <Grid container spacing={3}>
+                    {/* Anomalies Alert */}
+                    {chartsData.anomalies?.length > 0 && (
+                        <Grid item xs={12}>
+                            <Paper sx={{ p: 2, bgcolor: 'error.light', color: 'error.contrastText', borderRadius: 3, display: 'flex', alignItems: 'center', gap: 2 }}>
+                                <ErrorIcon />
+                                <Box sx={{ flexGrow: 1 }}>
+                                    <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
+                                        Attention: {chartsData.anomalies.length} Data Anomalies Detected
+                                    </Typography>
+                                    <Typography variant="body2">
+                                        Some data points deviate significantly from the norm. Review the details below.
+                                    </Typography>
+                                </Box>
+                                <Button size="small" variant="contained" color="error" onClick={() => document.getElementById('anomalies-section').scrollIntoView({ behavior: 'smooth' })}>
+                                    View Details
+                                </Button>
+                            </Paper>
+                        </Grid>
+                    )}
+
                     {/* Line Chart */}
                     <Grid item xs={12} lg={8}>
                         <Paper sx={{ p: 3, borderRadius: 3, height: 400, boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}>
@@ -296,7 +326,7 @@ const Analytics = () => {
                         <Paper sx={{ p: 3, borderRadius: 3, height: 400, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}>
                             <Typography variant="h6" gutterBottom fontWeight={600} color="textPrimary" sx={{ alignSelf: 'flex-start' }}>Revenue Share</Typography>
                             <Box sx={{ maxWidth: 280, width: '100%', flexGrow: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                <Pie data={pieChartData} options={pieOptions} />
+                                <Pie data={pieChartData} options={{ ...pieOptions, onClick: handleChartClick }} />
                             </Box>
                         </Paper>
                     </Grid>
@@ -306,10 +336,37 @@ const Analytics = () => {
                         <Paper sx={{ p: 3, borderRadius: 3, height: 450, boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}>
                             <Typography variant="h6" gutterBottom fontWeight={600} color="textPrimary">Top Fleets Performance</Typography>
                             <Box sx={{ height: '90%' }}>
-                                <Bar options={commonOptions} data={barChartData} />
+                                <Bar options={{ ...commonOptions, onClick: handleChartClick }} data={barChartData} />
                             </Box>
                         </Paper>
                     </Grid>
+
+                    {/* Anomalies List */}
+                    {chartsData.anomalies?.length > 0 && (
+                        <Grid item xs={12} id="anomalies-section">
+                            <Paper sx={{ p: 3, borderRadius: 3, border: '1px solid', borderColor: 'error.main', bgcolor: 'rgba(239, 68, 68, 0.02)' }}>
+                                <Stack direction="row" spacing={1} alignItems="center" mb={2}>
+                                    <ErrorIcon color="error" />
+                                    <Typography variant="h6" fontWeight={700} color="error.dark">Detected Anomalies</Typography>
+                                </Stack>
+                                <Divider sx={{ mb: 2 }} />
+                                <Grid container spacing={2}>
+                                    {chartsData.anomalies.map((anom, idx) => (
+                                        <Grid item xs={12} md={6} lg={4} key={idx}>
+                                            <Paper sx={{ p: 2, borderRadius: 2, border: '1px solid', borderColor: 'divider' }}>
+                                                <Stack direction="row" justifyContent="space-between" mb={1}>
+                                                    <Chip label={anom.fleet} size="small" color="primary" />
+                                                    <Typography variant="caption" sx={{ color: 'text.secondary' }}>{anom.date}</Typography>
+                                                </Stack>
+                                                <Typography variant="h6" sx={{ fontWeight: 800 }}>₦{anom.amount.toLocaleString()}</Typography>
+                                                <Typography variant="body2" color="error.main" sx={{ fontWeight: 600 }}>{anom.reason}</Typography>
+                                            </Paper>
+                                        </Grid>
+                                    ))}
+                                </Grid>
+                            </Paper>
+                        </Grid>
+                    )}
                 </Grid>
             )}
         </Box>
