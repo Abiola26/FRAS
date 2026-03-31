@@ -1,16 +1,47 @@
-# React + Vite
+# 🌐 FRAS: Web Dashboard
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+The frontend component of the Fleet Reporting & Analytics System, built for a modern, responsive user experience. 
 
-Currently, two official plugins are available:
+---
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+## 🚀 Key Features
 
-## React Compiler
+- **⚡ Interactive Analytics**: Dynamic dashboards visualizing fleet performance using Chart.js.
+- **📄 Report Management**: Easily view, Filter, and export reports in multiple formats.
+- **☁️ Drag-and-Drop Upload**: Streamlined data ingestion via specialized CSV/Excel processors.
+- **🔐 Protected Navigation**: Strict role-based routing (Admin vs User).
+- **💅 Modern Aesthetics**: Premium UI built with Material-UI (MUI) v5.
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+---
 
-## Expanding the ESLint configuration
+## 🛠️ Technology Stack
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+- **React 18.3**: Main UI logic.
+- **Vite 5**: Core build engine for lightning-fast HMR.
+- **Material-UI (MUI)**: The industry-standard design system.
+- **React-ChartJS-2**: Powerful data visualization.
+- **Axios**: Efficient API orchestration with interceptors.
+
+---
+
+## 🚦 Getting Started
+
+### 1. Installation
+```bash
+npm install
+```
+
+### 2. Configuration
+Create a `.env` file in the root:
+```env
+VITE_API_URL=http://localhost:8000
+```
+
+### 3. Development Server
+```bash
+npm run dev
+```
+
+---
+
+**© 2026 Fleet Reporting & Analytics System. Proprietary. All rights reserved.**

@@ -215,10 +215,17 @@ Date,Fleet,Amount
 - Verify admin user exists: run `python create_admin.py`
 - Check JWT secret key is set in `.env`
 
-## License
-
-This project is proprietary. All rights reserved.
-
 ## Support
 
 For issues and questions, please contact the development team.
+
+---
+
+## 📈 Recent Improvements (v1.1.0)
+- **Report Overhaul**: Streamlined Excel report generation to focus on **Bus Performance** and **Daily Subtotals** sheets only, ensuring concise and accurate reporting.
+- **Enhanced Data Layer**: Refactored SQLAlchemy queries for better performance under heavy load.
+- **Security Updates**: Hardened JWT handling for improved session management.
+
+---
+
+**© 2026 Fleet Reporting & Analytics System. Proprietary. All rights reserved.**
