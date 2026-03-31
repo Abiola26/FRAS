@@ -315,32 +315,18 @@ class ReportGenerator:
             bus_summary_df["FUEL USED"].sum()
         ]
 
-        # 3. Dashboard Stats Logic
-        stats_df = pd.DataFrame({
-            "Metric": ["Total Revenue", "Total Records", "Top Fleet", "Avg Revenue"],
-            "Value": [
-                analytics.dashboard_stats.total_revenue,
-                analytics.dashboard_stats.total_records,
-                analytics.dashboard_stats.top_performing_fleet,
-                analytics.dashboard_stats.average_trip_revenue
-            ]
-        })
-
         # ---------------- WRITE TO EXCEL ----------------
         
         output = BytesIO()
-        with pd.ExcelWriter(output, engine='openpyxl') as writer:
-            # Sheet 1: Bus Performance (Primary Report)
-            bus_summary_df.to_excel(writer, sheet_name="Bus Performance", index=False)
-            
-            # Sheet 2: Dashboard Stats
-            stats_df.to_excel(writer, sheet_name="Dashboard", index=False)
-            
-            # Sheet 3: Daily Subtotals
-            subtotal_df.to_excel(writer, sheet_name="Daily Subtotals", index=False)
-            
-            # Sheet 4: Raw Data
-            df.to_excel(writer, sheet_name="Raw Data", index=False)
+        writer = pd.ExcelWriter(output, engine='openpyxl')
+        
+        # Sheet 1: Bus Performance (Primary Report)
+        bus_summary_df.to_excel(writer, sheet_name="Bus Performance", index=False)
+        
+        # Sheet 2: Daily Subtotals
+        subtotal_df.to_excel(writer, sheet_name="Daily Subtotals", index=False)
+        
+        writer.close()
 
         # ---------------- APPLY STYLING ----------------
         output.seek(0)
