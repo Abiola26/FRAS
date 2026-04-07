@@ -2,28 +2,30 @@
 Application configuration management
 Centralizes all configuration variables from environment
 """
-import os
-from pydantic_settings import BaseSettings
+import logging
 from functools import lru_cache
-from typing import Optional
+
+from pydantic_settings import BaseSettings
+
+logger = logging.getLogger(__name__)
 
 
 class Settings(BaseSettings):
-    """Application settings loaded from environment variables"""
-    
-    # Database - with fallback to SQLite for development
+    """Application settings loaded from environment variables."""
+
+    # Database
     database_url: str = "sqlite:///./fleet.db"
-    
-    # Security - with default for development (CHANGE IN PRODUCTION!)
+
+    # Security
     secret_key: str = "dev-secret-key-change-in-production-use-env-variable"
     algorithm: str = "HS256"
     access_token_expire_minutes: int = 60
-    
+
     # CORS
     allowed_origins: list[str] = ["http://localhost:3000", "http://localhost:5173"]
-    
+
     # Application
-    app_name: str = "fras"
+    app_name: str = "FRAS API"
     app_version: str = "1.0.0"
     debug: bool = False
 
@@ -35,25 +37,23 @@ class Settings(BaseSettings):
     mail_server: str = "smtp.gmail.com"
     mail_starttls: bool = True
     mail_ssl_tls: bool = False
-    
+
     model_config = {
         "env_file": ".env",
         "case_sensitive": False,
-        "env_file_encoding": "utf-8"
+        "env_file_encoding": "utf-8",
     }
 
 
 @lru_cache()
 def get_settings() -> Settings:
-    """Get cached settings instance"""
+    """Get cached settings instance."""
     settings = Settings()
-    
-    # Warn if using default secret key
+
     if settings.secret_key == "dev-secret-key-change-in-production-use-env-variable":
-        print("WARNING: Using default SECRET_KEY! Set SECRET_KEY in .env for production!")
-    
-    # Warn if using SQLite
+        logger.warning("Using default SECRET_KEY! Set SECRET_KEY in .env for production!")
+
     if settings.database_url.startswith("sqlite"):
-        print("INFO: Using SQLite database for development")
-    
+        logger.info("Using SQLite database for development")
+
     return settings
