@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components */
 import React, { createContext, useState, useMemo, useEffect, useContext } from 'react';
 import { ThemeProvider, createTheme } from '@mui/material/styles';
 import { getDesignTokens } from '../theme/theme';

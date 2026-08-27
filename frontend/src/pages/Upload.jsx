@@ -18,6 +18,11 @@ import {
     TableHead,
     TableRow,
     Alert,
+    Dialog,
+    DialogTitle,
+    DialogContent,
+    DialogActions,
+    Chip,
 } from '@mui/material';
 import {
     CloudUpload,
@@ -25,6 +30,7 @@ import {
     Delete,
     ErrorOutline,
     CheckCircleOutline,
+    WarningAmber,
 } from '@mui/icons-material';
 import { useSnackbar } from 'notistack';
 import api from '../services/api';
@@ -37,6 +43,10 @@ const Upload = () => {
     const [previewData, setPreviewData] = useState([]);
     const [previewColumns, setPreviewColumns] = useState([]);
     const [validationError, setValidationError] = useState(null);
+
+    const [checking, setChecking] = useState(false);
+    const [dupResult, setDupResult] = useState(null);
+    const [dupDialogOpen, setDupDialogOpen] = useState(false);
 
     const { enqueueSnackbar } = useSnackbar();
 
@@ -107,8 +117,7 @@ const Upload = () => {
                     setPreviewColumns(jsonData[0]);
                     setPreviewData(jsonData.slice(1, 6));
                 }
-            } catch (error) {
-                console.error("Error parsing file for preview", error);
+            } catch {
                 setValidationError("Failed to parse file. Please ensure it is a valid CSV/Excel.");
             }
         };
@@ -129,44 +138,86 @@ const Upload = () => {
         });
     };
 
-    const handleUpload = async () => {
+    const handleCheckDuplicates = async () => {
         if (files.length === 0 || validationError) return;
 
+        setChecking(true);
+        const formData = new FormData();
+        files.forEach(file => formData.append('files', file));
+
+        try {
+            const response = await api.post('/files/check-duplicates', formData, {
+                headers: { 'Content-Type': 'multipart/form-data' },
+            });
+            const data = response.data;
+            setDupResult(data);
+            setDupDialogOpen(true);
+        } catch (error) {
+            enqueueSnackbar('Duplicate check failed. ' + (error.response?.data?.detail || 'Please try again.'), { variant: 'error' });
+        } finally {
+            setChecking(false);
+        }
+    };
+
+    const handleConfirmUpload = async () => {
+        setDupDialogOpen(false);
         setUploading(true);
         setProgress(0);
 
         const formData = new FormData();
-        files.forEach(file => {
-            formData.append('files', file);
-        });
+        files.forEach(file => formData.append('files', file));
 
         try {
-            await api.post('/files/upload', formData, {
-                headers: {
-                    'Content-Type': 'multipart/form-data',
-                },
+            const response = await api.post('/files/upload', formData, {
+                headers: { 'Content-Type': 'multipart/form-data' },
                 onUploadProgress: (progressEvent) => {
                     const percentCompleted = Math.round((progressEvent.loaded * 100) / progressEvent.total);
                     setProgress(percentCompleted);
                 }
             });
-            enqueueSnackbar('Upload successful!', { variant: 'success' });
+
+            const { stats } = response.data;
+
+            if (stats.errors && stats.errors.length > 0) {
+                enqueueSnackbar(`Upload errors: ${stats.errors.join('; ')}`, { variant: 'error' });
+            } else if (stats.records_imported === 0) {
+                enqueueSnackbar(
+                    `No new records imported. ${stats.duplicates_skipped} duplicate(s) skipped.`,
+                    { variant: 'warning' }
+                );
+            } else {
+                const msg = `Uploaded ${stats.records_imported} record(s).` +
+                    (stats.duplicates_skipped > 0 ? ` ${stats.duplicates_skipped} duplicate(s) skipped.` : '');
+                enqueueSnackbar(msg, { variant: 'success' });
+            }
+
             setFiles([]);
             setPreviewData([]);
             setPreviewColumns([]);
             setValidationError(null);
             setProgress(0);
+            setDupResult(null);
         } catch (error) {
-            console.error(error);
             enqueueSnackbar('Upload failed. ' + (error.response?.data?.detail || 'Please try again.'), { variant: 'error' });
         } finally {
             setUploading(false);
         }
     };
 
+    const handleCancelUpload = () => {
+        setDupDialogOpen(false);
+        setDupResult(null);
+        enqueueSnackbar('Upload cancelled.', { variant: 'info' });
+    };
+
+    const formatAmount = (val) => {
+        const num = Number(val);
+        return isNaN(num) ? val : num.toLocaleString();
+    };
+
     return (
         <Box maxWidth="lg" mx="auto">
-            <Typography variant="h4" sx={{ mb: 1, fontWeight: 800, color: '#1e293b' }}>
+            <Typography variant="h4" sx={{ mb: 1, fontWeight: 800, color: 'text.primary' }}>
                 Upload Data
             </Typography>
             <Typography variant="body1" color="textSecondary" sx={{ mb: 4 }}>
@@ -182,9 +233,9 @@ const Upload = () => {
                 sx={{
                     p: 6,
                     textAlign: 'center',
-                    backgroundColor: dragActive ? 'rgba(37, 99, 235, 0.05)' : '#f8fafc',
+                    backgroundColor: dragActive ? 'rgba(37, 99, 235, 0.05)' : 'action.hover',
                     border: '2px dashed',
-                    borderColor: dragActive ? 'primary.main' : '#cbd5e1',
+                    borderColor: dragActive ? 'primary.main' : 'divider',
                     borderRadius: 4,
                     transition: 'all 0.2s ease-in-out',
                     cursor: 'pointer',
@@ -203,7 +254,7 @@ const Upload = () => {
                     id="file-upload"
                 />
                 <label htmlFor="file-upload" style={{ width: '100%', height: '100%', cursor: 'pointer' }}>
-                    <CloudUpload sx={{ fontSize: 64, color: dragActive ? 'primary.main' : '#94a3b8', mb: 2 }} />
+                    <CloudUpload sx={{ fontSize: 64, color: dragActive ? 'primary.main' : 'text.secondary', mb: 2 }} />
                     <Typography variant="h6" gutterBottom color="textPrimary" fontWeight={600}>
                         Drag and drop files here, or click to browse
                     </Typography>
@@ -230,7 +281,7 @@ const Upload = () => {
                                                 </IconButton>
                                             )
                                         }
-                                        sx={{ bgcolor: 'white' }}
+                                        sx={{ bgcolor: 'background.paper' }}
                                     >
                                         <ListItemIcon>
                                             <InsertDriveFile color="primary" />
@@ -241,25 +292,23 @@ const Upload = () => {
                                             primaryTypographyProps={{ fontWeight: 500 }}
                                         />
                                     </ListItem>
-                                    {index < files.length - 1 && <Box sx={{ borderBottom: '1px solid #f1f5f9' }} />}
+                                    {index < files.length - 1 && <Box sx={{ borderBottom: '1px solid', borderColor: 'divider' }} />}
                                 </React.Fragment>
                             ))}
                         </List>
 
-                        {/* Validation Feedback */}
                         {validationError ? (
                             <Alert severity="error" icon={<ErrorOutline />} sx={{ m: 2, borderRadius: 2 }}>
                                 {validationError}
                             </Alert>
                         ) : previewData.length > 0 ? (
                             <Alert severity="success" icon={<CheckCircleOutline />} sx={{ m: 2, borderRadius: 2 }}>
-                                File structure looks good! Ready to upload.
+                                File structure looks good! Ready to check for duplicates.
                             </Alert>
                         ) : null}
 
-                        {/* Data Preview Section */}
                         {previewData.length > 0 && (
-                            <Box sx={{ p: 2, bgcolor: '#f1f5f9', borderTop: '1px solid #e2e8f0' }}>
+                            <Box sx={{ p: 2, bgcolor: 'action.hover', borderTop: '1px solid', borderColor: 'divider' }}>
                                 <Typography variant="subtitle2" gutterBottom color="textSecondary" sx={{ mb: 1, display: 'flex', alignItems: 'center', gap: 1 }}>
                                     Data Preview (Last added file)
                                 </Typography>
@@ -268,13 +317,13 @@ const Upload = () => {
                                         <TableHead>
                                             <TableRow>
                                                 {previewColumns.map((col, idx) => (
-                                                    <TableCell key={idx} sx={{ fontWeight: 700, bgcolor: '#e2e8f0', color: '#475569' }}>{col || `Col ${idx + 1}`}</TableCell>
+                                                    <TableCell key={idx} sx={{ fontWeight: 700, bgcolor: 'action.hover', color: 'text.secondary' }}>{col || `Col ${idx + 1}`}</TableCell>
                                                 ))}
                                             </TableRow>
                                         </TableHead>
                                         <TableBody>
                                             {previewData.map((row, rIdx) => (
-                                                <TableRow key={rIdx} sx={{ '&:nth-of-type(even)': { bgcolor: 'rgba(0,0,0,0.01)' } }}>
+                                                <TableRow key={rIdx} sx={{ '&:nth-of-type(even)': { bgcolor: 'action.hover' } }}>
                                                     {Array.isArray(row) ? row.map((cell, cIdx) => (
                                                         <TableCell key={cIdx}>{String(cell || '')}</TableCell>
                                                     )) : <TableCell colSpan={previewColumns.length}>Invalid Row Data</TableCell>}
@@ -286,9 +335,8 @@ const Upload = () => {
                             </Box>
                         )}
 
-
                         {uploading && (
-                            <Box sx={{ p: 2, bgcolor: '#f8fafc', borderTop: '1px solid #e2e8f0' }}>
+                            <Box sx={{ p: 2, bgcolor: 'action.hover', borderTop: '1px solid', borderColor: 'divider' }}>
                                 <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
                                     <Typography variant="caption" color="textSecondary">Uploading...</Typography>
                                     <Typography variant="caption" color="textSecondary">{progress}%</Typography>
@@ -297,20 +345,112 @@ const Upload = () => {
                             </Box>
                         )}
 
-                        <Box sx={{ p: 2, bgcolor: '#f8fafc', borderTop: '1px solid #e2e8f0', display: 'flex', justifyContent: 'flex-end', gap: 2 }}>
+                        <Box sx={{ p: 2, bgcolor: 'action.hover', borderTop: '1px solid', borderColor: 'divider', display: 'flex', justifyContent: 'flex-end', gap: 2 }}>
                             <Button
                                 variant="contained"
                                 size="large"
-                                onClick={handleUpload}
-                                disabled={uploading || files.length === 0 || !!validationError}
+                                onClick={handleCheckDuplicates}
+                                disabled={checking || uploading || files.length === 0 || !!validationError}
                                 sx={{ textTransform: 'none', px: 4, borderRadius: 2 }}
                             >
-                                {uploading ? 'Processing...' : 'Confirm & Upload'}
+                                {checking ? 'Checking...' : 'Check for Duplicates'}
                             </Button>
                         </Box>
                     </Paper>
                 </Box>
             )}
+
+            <Dialog
+                open={dupDialogOpen}
+                onClose={handleCancelUpload}
+                maxWidth="md"
+                fullWidth
+            >
+                <DialogTitle sx={{ fontWeight: 700 }}>
+                    Duplicate Review
+                </DialogTitle>
+                <DialogContent dividers>
+                    {dupResult && (
+                        <>
+                            <Box sx={{ display: 'flex', gap: 2, mb: 3, flexWrap: 'wrap' }}>
+                                <Chip
+                                    label={`Total Records: ${dupResult.total_records}`}
+                                    color="default"
+                                    variant="outlined"
+                                />
+                                <Chip
+                                    label={`New Records: ${dupResult.new_count}`}
+                                    color="success"
+                                    variant="outlined"
+                                />
+                                <Chip
+                                    label={`Duplicates: ${dupResult.duplicates_count}`}
+                                    color={dupResult.duplicates_count > 0 ? 'warning' : 'default'}
+                                    variant="outlined"
+                                />
+                            </Box>
+
+                            {dupResult.errors && dupResult.errors.length > 0 && (
+                                <Alert severity="error" sx={{ mb: 2, borderRadius: 2 }}>
+                                    {dupResult.errors.join('; ')}
+                                </Alert>
+                            )}
+
+                            {dupResult.duplicates_count === 0 ? (
+                                <Alert severity="success" icon={<CheckCircleOutline />} sx={{ borderRadius: 2 }}>
+                                    No duplicates found. All {dupResult.new_count} record(s) are new.
+                                </Alert>
+                            ) : (
+                                <>
+                                    <Alert severity="warning" icon={<WarningAmber />} sx={{ mb: 2, borderRadius: 2 }}>
+                                        {dupResult.duplicates_count} duplicate record(s) found. They will be skipped during upload.
+                                    </Alert>
+                                    <TableContainer component={Paper} variant="outlined" sx={{ borderRadius: 2, maxHeight: 400 }}>
+                                        <Table size="small" stickyHeader>
+                                            <TableHead>
+                                                <TableRow>
+                                                    <TableCell sx={{ fontWeight: 700 }}>Commuter Name</TableCell>
+                                                    <TableCell sx={{ fontWeight: 700 }}>Date</TableCell>
+                                                    <TableCell sx={{ fontWeight: 700 }}>Amount</TableCell>
+                                                    <TableCell sx={{ fontWeight: 700 }}>Status</TableCell>
+                                                </TableRow>
+                                            </TableHead>
+                                            <TableBody>
+                                                {dupResult.duplicates.map((row, idx) => (
+                                                    <TableRow key={idx} sx={{ '&:nth-of-type(even)': { bgcolor: 'action.hover' } }}>
+                                                        <TableCell>{row.commuter_name || '-'}</TableCell>
+                                                        <TableCell>{row.date}</TableCell>
+                                                        <TableCell>{formatAmount(row.amount)}</TableCell>
+                                                        <TableCell>
+                                                            <Chip label="Duplicate" color="warning" size="small" variant="outlined" />
+                                                        </TableCell>
+                                                    </TableRow>
+                                                ))}
+                                            </TableBody>
+                                        </Table>
+                                    </TableContainer>
+                                </>
+                            )}
+                        </>
+                    )}
+                </DialogContent>
+                <DialogActions sx={{ px: 3, py: 2 }}>
+                    <Button
+                        onClick={handleCancelUpload}
+                        sx={{ textTransform: 'none' }}
+                    >
+                        Cancel Upload
+                    </Button>
+                    <Button
+                        onClick={handleConfirmUpload}
+                        variant="contained"
+                        disabled={!dupResult || dupResult.new_count === 0}
+                        sx={{ textTransform: 'none', borderRadius: 2 }}
+                    >
+                        Proceed with Upload ({dupResult?.new_count || 0} new record(s))
+                    </Button>
+                </DialogActions>
+            </Dialog>
         </Box>
     );
 };

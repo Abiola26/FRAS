@@ -1,8 +1,6 @@
 """
 Notification routes
 """
-from typing import List
-
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
@@ -14,7 +12,7 @@ from app.schemas import NotificationOut
 router = APIRouter(prefix="/notifications", tags=["Notifications"])
 
 
-@router.get("/", response_model=List[NotificationOut])
+@router.get("/", response_model=list[NotificationOut])
 def get_notifications(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),

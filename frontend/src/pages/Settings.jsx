@@ -13,9 +13,16 @@ import {
     DialogTitle,
     DialogContent,
     DialogActions,
-    MenuItem
+    MenuItem,
+    CircularProgress
 } from '@mui/material';
-import { Add, SupervisorAccount, Settings as SettingsIcon, TrendingUp, Shield, Build } from '@mui/icons-material';
+import {
+    Add,
+    SupervisorAccount,
+    Settings as SettingsIcon,
+    TrendingUp,
+    Build
+} from '@mui/icons-material';
 import { useAuth } from '../context/AuthContext';
 import { useColorMode } from '../context/ColorModeContext';
 import api from '../services/api';
@@ -47,8 +54,8 @@ const Settings = () => {
                 settingsObj[s.key] = s.value;
             });
             setSystemSettings(settingsObj);
-        } catch (error) {
-            console.error("Failed to fetch settings", error);
+        } catch {
+            // Silently handle settings fetch errors
         } finally {
             setSettingsLoading(false);
         }
@@ -63,7 +70,7 @@ const Settings = () => {
             await api.put(`/settings/${key}`, { key, value });
             enqueueSnackbar(`Setting ${key} updated`, { variant: 'success' });
             fetchSystemSettings();
-        } catch (error) {
+        } catch {
             enqueueSnackbar('Failed to update setting', { variant: 'error' });
         }
     };
@@ -101,6 +108,11 @@ const Settings = () => {
                 </Typography>
             </Box>
 
+            {settingsLoading ? (
+                <Box sx={{ display: 'flex', justifyContent: 'center', py: 8 }}>
+                    <CircularProgress />
+                </Box>
+            ) : (
             <Grid container spacing={3}>
                 {/* Business Rules (Admin Only) */}
                 {isAdmin && (
@@ -221,6 +233,7 @@ const Settings = () => {
                     </Grid>
                 )}
             </Grid>
+            )}
 
             {/* Create User Dialog */}
             <Dialog open={openUserDialog} onClose={() => setOpenUserDialog(false)} maxWidth="xs" fullWidth>

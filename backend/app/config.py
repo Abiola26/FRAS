@@ -22,7 +22,8 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int = 60
 
     # CORS
-    allowed_origins: list[str] = ["http://localhost:3000", "http://localhost:5173"]
+    allowed_origins: list[str] | str = ["http://localhost:3000", "http://localhost:5173"]
+
 
     # Application
     app_name: str = "FRAS API"
@@ -50,7 +51,11 @@ def get_settings() -> Settings:
     """Get cached settings instance."""
     settings = Settings()
 
+    if isinstance(settings.allowed_origins, str):
+        settings.allowed_origins = [o.strip() for o in settings.allowed_origins.split(",") if o.strip()]
+
     if settings.secret_key == "dev-secret-key-change-in-production-use-env-variable":
+
         logger.warning("Using default SECRET_KEY! Set SECRET_KEY in .env for production!")
 
     if settings.database_url.startswith("sqlite"):

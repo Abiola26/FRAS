@@ -131,7 +131,9 @@ def create_user(
 
 
 @router.post("/change-password")
+@limiter.limit("5/minute")
 def change_password(
+    request: Request,
     password_in: UserPasswordChange,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -184,7 +186,7 @@ def update_user_role(
     user_id: int,
     user_update: UserUpdate,
     db: Session = Depends(get_db),
-    _: User = Depends(admin_required),
+    current_user: User = Depends(admin_required),
 ):
     """Update user role (Admin only)."""
     user = db.query(User).filter(User.id == user_id).first()
@@ -198,6 +200,13 @@ def update_user_role(
 
     db.commit()
     db.refresh(user)
+    crud.create_audit_log(
+        db,
+        current_user.id,
+        current_user.username,
+        "UPDATE_USER",
+        f"Updated user {user.username} (role={user.role})",
+    )
     return user
 
 
@@ -205,16 +214,43 @@ def update_user_role(
 def delete_user(
     user_id: int,
     db: Session = Depends(get_db),
-    _: User = Depends(admin_required),
+    current_user: User = Depends(admin_required),
 ):
     """Delete a user (Admin only)."""
+    if user_id == current_user.id:
+        raise HTTPException(status_code=400, detail="You cannot delete your own account")
+
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
+    username = user.username
     db.delete(user)
     db.commit()
+    crud.create_audit_log(db, current_user.id, current_user.username, "DELETE_USER", f"Deleted user: {username}")
     return {"message": "User deleted successfully"}
+
+
+@router.post("/users/{user_id}/unlock", response_model=UserOut)
+def unlock_user(
+    user_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(admin_required),
+):
+    """Unlock a locked user account (Admin only)."""
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    if not user.is_locked:
+        raise HTTPException(status_code=400, detail="Account is not locked")
+
+    user.is_locked = False
+    user.failed_login_attempts = 0
+    db.commit()
+    db.refresh(user)
+    crud.create_audit_log(db, current_user.id, current_user.username, "UNLOCK_USER", f"Unlocked user: {user.username}")
+    return user
 
 
 @router.post("/password-reset-request")
@@ -227,21 +263,26 @@ async def password_reset_request(
 ):
     """Request a password reset token."""
     user = db.query(User).filter(User.email == reset_request.email).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="User with this email not found")
 
-    reset_token = create_access_token(data={"sub": user.username, "purpose": "password_reset"})
-    background_tasks.add_task(send_password_reset_email, user.email, reset_token)
-    crud.create_audit_log(db, user.id, user.username, "PASSWORD_RESET_REQUESTED")
+    if user:
+        reset_token = create_access_token(data={"sub": user.username, "purpose": "password_reset"})
+        background_tasks.add_task(send_password_reset_email, user.email, reset_token)
+        crud.create_audit_log(db, user.id, user.username, "PASSWORD_RESET_REQUESTED")
 
-    return {
+    response = {
         "message": "If an account exists for this email, a reset token has been sent.",
-        "token": reset_token,  # Exposed for development convenience only
     }
+    if settings.debug and user:
+        # Dev convenience only — never expose reset tokens when debug is off.
+        response["token"] = reset_token
+
+    return response
 
 
 @router.post("/password-reset-confirm")
+@limiter.limit("5/minute")
 def password_reset_confirm(
+    request: Request,
     confirm: PasswordResetConfirm,
     db: Session = Depends(get_db),
 ):

@@ -1,11 +1,10 @@
 """
 System settings routes
 """
-from typing import List
-
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
+from app import crud
 from app.auth import get_current_user
 from app.database import get_db
 from app.dependencies import admin_required
@@ -15,7 +14,7 @@ from app.schemas import SystemSettingBase, SystemSettingOut
 router = APIRouter(prefix="/settings", tags=["Settings"])
 
 
-@router.get("/", response_model=List[SystemSettingOut])
+@router.get("/", response_model=list[SystemSettingOut])
 def get_settings(
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),
@@ -29,7 +28,7 @@ def update_setting(
     key: str,
     setting: SystemSettingBase,
     db: Session = Depends(get_db),
-    _: User = Depends(admin_required),
+    current_user: User = Depends(admin_required),
 ):
     """Update a system setting (Admin only)."""
     db_setting = db.query(SystemSetting).filter(SystemSetting.key == key).first()
@@ -43,6 +42,13 @@ def update_setting(
 
     db.commit()
     db.refresh(db_setting)
+    crud.create_audit_log(
+        db,
+        current_user.id,
+        current_user.username,
+        "UPDATE_SETTING",
+        f"{key} = {setting.value}",
+    )
     return db_setting
 
 
@@ -50,7 +56,7 @@ def update_setting(
 def delete_setting(
     key: str,
     db: Session = Depends(get_db),
-    _: User = Depends(admin_required),
+    current_user: User = Depends(admin_required),
 ):
     """Delete a system setting (Admin only)."""
     db_setting = db.query(SystemSetting).filter(SystemSetting.key == key).first()
@@ -59,4 +65,11 @@ def delete_setting(
 
     db.delete(db_setting)
     db.commit()
+    crud.create_audit_log(
+        db,
+        current_user.id,
+        current_user.username,
+        "DELETE_SETTING",
+        f"Key: {key}",
+    )
     return {"message": "Setting deleted successfully"}

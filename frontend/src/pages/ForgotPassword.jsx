@@ -10,8 +10,6 @@ import {
     Alert,
     CircularProgress,
     Container,
-    Link,
-    Divider
 } from '@mui/material';
 import {
     ArrowBack,
@@ -31,6 +29,7 @@ const ForgotPassword = () => {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
     const [successMsg, setSuccessMsg] = useState(null);
+    const [devToken, setDevToken] = useState(false);
 
     const handleRequest = async (e) => {
         e.preventDefault();
@@ -39,11 +38,11 @@ const ForgotPassword = () => {
         try {
             const res = await api.post('/auth/password-reset-request', { email });
             setStep(2);
-            setSuccessMsg(res.data.message);
-            // In dev, the token is returned in res.data.token
+            setSuccessMsg(res.data.message || "If an account exists for this email, a reset token has been sent.");
+            // The backend only returns the token when DEBUG=true
             if (res.data.token) {
-                console.log("DEV RESET TOKEN:", res.data.token);
                 setToken(res.data.token);
+                setDevToken(true);
             }
         } catch (err) {
             setError(err.response?.data?.detail || 'Failed to request password reset');
@@ -149,9 +148,7 @@ const ForgotPassword = () => {
                             </Typography>
 
                             {error && <Alert severity="error" sx={{ mb: 3 }}>{error}</Alert>}
-                            <Alert severity="info" sx={{ mb: 3 }}>
-                                Check the browser console (F12) for the dev token.
-                            </Alert>
+                            {successMsg && <Alert severity="info" sx={{ mb: 3 }}>{devToken ? 'Dev mode: reset token pre-filled below.' : successMsg}</Alert>}
 
                             <TextField
                                 label="Reset Token"

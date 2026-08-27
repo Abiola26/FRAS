@@ -2,7 +2,6 @@ import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { CssBaseline, Box, CircularProgress } from '@mui/material';
 import { SnackbarProvider } from 'notistack';
-import theme from './theme/theme';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import Login from './pages/Login';
 import MainLayout from './components/layout/MainLayout';

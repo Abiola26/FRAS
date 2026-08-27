@@ -23,7 +23,8 @@ import {
     useMediaQuery,
     Badge,
     CircularProgress,
-    Tooltip
+    Tooltip,
+    Alert
 } from '@mui/material';
 import {
 
@@ -60,6 +61,15 @@ const MainLayout = () => {
 
     const [mobileOpen, setMobileOpen] = useState(false);
     const [anchorEl, setAnchorEl] = useState(null);
+    const [maintenanceMode, setMaintenanceMode] = useState(
+        () => window.sessionStorage.getItem('maintenance') === '1'
+    );
+
+    React.useEffect(() => {
+        const onMaintenance = (e) => setMaintenanceMode(Boolean(e.detail));
+        window.addEventListener('fras:maintenance', onMaintenance);
+        return () => window.removeEventListener('fras:maintenance', onMaintenance);
+    }, []);
 
     const handleDrawerToggle = () => {
         setMobileOpen(!mobileOpen);
@@ -92,8 +102,8 @@ const MainLayout = () => {
             setNotifications(data);
             const countData = await notificationAPI.getUnreadCount();
             setUnreadCount(countData.count);
-        } catch (error) {
-            console.error('Failed to fetch notifications:', error);
+        } catch {
+            // Silently handle notification fetch errors
         } finally {
             setIsNotifLoading(false);
         }
@@ -121,8 +131,8 @@ const MainLayout = () => {
             await notificationAPI.markAsRead(id);
             setNotifications(notifications.map(n => n.id === id ? { ...n, is_read: true } : n));
             setUnreadCount(prev => Math.max(0, prev - 1));
-        } catch (error) {
-            console.error('Failed to mark as read:', error);
+        } catch {
+            // Silently handle mark-as-read errors
         }
     };
 
@@ -131,8 +141,8 @@ const MainLayout = () => {
             await notificationAPI.markAllAsRead();
             setNotifications(notifications.map(n => ({ ...n, is_read: true })));
             setUnreadCount(0);
-        } catch (error) {
-            console.error('Failed to mark all as read:', error);
+        } catch {
+            // Silently handle mark-all-read errors
         }
     };
 
@@ -403,6 +413,11 @@ const MainLayout = () => {
                 sx={{ flexGrow: 1, p: 3, width: { md: `calc(100% - ${drawerWidth}px)` }, minHeight: '100vh', bgcolor: 'background.default' }}
             >
                 <Toolbar />
+                {maintenanceMode && (
+                    <Alert severity="warning" sx={{ mb: 2 }}>
+                        System is currently undergoing maintenance — some actions may be unavailable.
+                    </Alert>
+                )}
                 <Outlet />
             </Box>
         </Box>

@@ -23,6 +23,7 @@ from app.schemas import (
     DashboardStats,
     FleetRecordOut,
     FleetSummary,
+    WeeklySubtotal,
 )
 
 
@@ -121,7 +122,16 @@ class DataProcessor:
                 severity="medium",
             ))
 
-        return anomalies
+        # Deduplicate: keep only one anomaly per (date, fleet, amount) combination
+        seen = set()
+        unique_anomalies = []
+        for a in anomalies:
+            key = (a.date, a.fleet, a.amount)
+            if key not in seen:
+                seen.add(key)
+                unique_anomalies.append(a)
+
+        return unique_anomalies
 
     @staticmethod
     def process_analytics(records: List[FleetRecord]) -> AnalyticsResponse:
@@ -139,6 +149,8 @@ class DataProcessor:
                 ),
                 anomalies=[],
             )
+
+
 
         # Use list comprehension with tuples for vastly superior DataFrame creation speed
         data = [
@@ -182,6 +194,32 @@ class DataProcessor:
             for _, row in daily_grp.iterrows()
         ]
 
+        # Weekly Subtotals
+        df_dt = df.copy()
+        df_dt["date"] = pd.to_datetime(df_dt["date"])
+        weekly_grp = df_dt.groupby(pd.Grouper(key="date", freq="W-MON", label="left"))
+        
+        weekly_subs = []
+        for week_start, group in weekly_grp:
+            if group.empty:
+                continue
+            week_end = week_start + pd.Timedelta(days=6)
+            week_label = f"{week_start.date()} to {week_end.date()}"
+            
+            revenue = group["amount"].sum()
+            pax = len(group)
+            
+            fleet_week_grp = group.groupby("fleet")["amount"].sum()
+            total_remittance = sum(calculate_remittance(rev, f, config) for f, rev in fleet_week_grp.items())
+
+            weekly_subs.append(WeeklySubtotal(
+                week_range=week_label,
+                total_revenue=revenue,
+                pax=pax,
+                remittance=total_remittance
+            ))
+
+
         # Dashboard Stats with Trend
         total_rev = df["amount"].sum()
         total_count = len(df)
@@ -215,25 +253,26 @@ class DataProcessor:
             records=record_objs,
             fleet_summaries=summaries,
             daily_subtotals=subtotals,
+            weekly_subtotals=weekly_subs,
             dashboard_stats=stats,
             anomalies=anomalies,
         )
+
+
 
 
 class ReportGenerator:
     """Generates Excel and PDF reports"""
 
     @staticmethod
-    def generate_excel(analytics: AnalyticsResponse) -> BytesIO:
-        """Create a multi-sheet Excel report with custom styling."""
-        if not analytics.records:
+    def _create_excel_from_df(df: pd.DataFrame) -> BytesIO:
+        """Shared internal logic to create styled Excel from DataFrame."""
+        if df.empty:
             output = BytesIO()
             pd.DataFrame().to_excel(output)
             output.seek(0)
             return output
 
-        records_data = [r.model_dump() for r in analytics.records]
-        df = pd.DataFrame(records_data)
         df["date"] = pd.to_datetime(df["date"]).dt.date
         df["amount"] = pd.to_numeric(df["amount"], errors="coerce").fillna(0)
         df["fleet"] = df["fleet"].astype(str)
@@ -247,7 +286,15 @@ class ReportGenerator:
         )
 
         formatted_rows = []
-        for date_val, group in grouped.groupby("date"):
+        current_week_pax = 0
+        current_week_revenue = 0
+        
+        # Sort by date to ensure sequential processing
+        dates = sorted(grouped["date"].unique())
+        
+        for i, date_val in enumerate(dates):
+            group = grouped[grouped["date"] == date_val]
+            
             for _, row in group.iterrows():
                 formatted_rows.append({
                     "Date": row["date"],
@@ -255,14 +302,77 @@ class ReportGenerator:
                     "PAX": row["FleetCount"],
                     "REVENUE": row["TotalAmount"],
                 })
+            
+            day_pax = group["FleetCount"].sum()
+            day_rev = group["TotalAmount"].sum()
+            
             formatted_rows.append({
                 "Date": date_val,
                 "BUS CODE": "Subtotal",
-                "PAX": group["FleetCount"].sum(),
-                "REVENUE": group["TotalAmount"].sum(),
+                "PAX": day_pax,
+                "REVENUE": day_rev,
             })
+            
+            current_week_pax += day_pax
+            current_week_revenue += day_rev
+            
+            # Check if next date is in a different week or if it's the last date
+            # We use Sunday as the end of week (6)
+            is_last_date = (i == len(dates) - 1)
+            is_end_of_week = date_val.weekday() == 6 # Sunday
+            
+            if is_end_of_week or is_last_date:
+                formatted_rows.append({
+                    "Date": f"Week Ending {date_val}",
+                    "BUS CODE": "WEEKLY TOTAL",
+                    "PAX": current_week_pax,
+                    "REVENUE": current_week_revenue,
+                })
+                # Reset for next week
+                current_week_pax = 0
+                current_week_revenue = 0
 
         subtotal_df = pd.DataFrame(formatted_rows)
+
+        # Weekly Subtotals
+        df_dt = df.copy()
+        df_dt["date"] = pd.to_datetime(df_dt["date"])
+        # Calculate week start (Monday)
+        df_dt["week_start"] = df_dt["date"] - pd.to_timedelta(df_dt["date"].dt.weekday, unit="D")
+        
+        weekly_rows = []
+        config = get_system_config()
+        
+        # Group by week_start
+        for week_start, group in df_dt.groupby("week_start"):
+            week_end = week_start + pd.Timedelta(days=6)
+            week_label = f"{week_start.date()} to {week_end.date()}"
+            
+            revenue = group["amount"].sum()
+            pax = len(group)
+            
+            # Sum individual fleet remittances
+            fleet_week_grp = group.groupby("fleet")["amount"].sum()
+            total_remittance = sum(calculate_remittance(rev, f, config) for f, rev in fleet_week_grp.items())
+            
+            weekly_rows.append({
+                "Week Range": week_label,
+                "PAX": pax,
+                "REVENUE": revenue,
+                "REMITTANCE": total_remittance,
+                "FUEL USED": revenue * 0.30
+            })
+            
+        weekly_summary_df = pd.DataFrame(weekly_rows)
+        if not weekly_summary_df.empty:
+            grand_total_weekly = {
+                "Week Range": "Grand Total",
+                "PAX": weekly_summary_df["PAX"].sum(),
+                "REVENUE": weekly_summary_df["REVENUE"].sum(),
+                "REMITTANCE": weekly_summary_df["REMITTANCE"].sum(),
+                "FUEL USED": weekly_summary_df["FUEL USED"].sum(),
+            }
+            weekly_summary_df = pd.concat([weekly_summary_df, pd.DataFrame([grand_total_weekly])], ignore_index=True)
 
         # Bus Code Performance
         bus_summary_df = (
@@ -273,8 +383,6 @@ class ReportGenerator:
             .sort_values("BUS CODE")
         )
 
-        config = get_system_config()
-
         def calculate_metrics(row):
             code = str(row["BUS CODE"]).strip()
             remittance = calculate_remittance(row["REVENUE"], code, config)
@@ -282,22 +390,27 @@ class ReportGenerator:
             return pd.Series([remittance, fuel_used])
 
         bus_summary_df[["REMITTANCE", "FUEL USED"]] = bus_summary_df.apply(calculate_metrics, axis=1)
-        bus_summary_df.loc[len(bus_summary_df)] = [
-            "Grand Total",
-            bus_summary_df["PAX"].sum(),
-            bus_summary_df["REVENUE"].sum(),
-            bus_summary_df["REMITTANCE"].sum(),
-            bus_summary_df["FUEL USED"].sum(),
-        ]
+        
+        # Calculate Grand Total manually safely
+        if not bus_summary_df.empty:
+            grand_total_row = {
+                "BUS CODE": "Grand Total",
+                "PAX": bus_summary_df["PAX"].sum(),
+                "REVENUE": bus_summary_df["REVENUE"].sum(),
+                "REMITTANCE": bus_summary_df["REMITTANCE"].sum(),
+                "FUEL USED": bus_summary_df["FUEL USED"].sum(),
+            }
+            bus_summary_df = pd.concat([bus_summary_df, pd.DataFrame([grand_total_row])], ignore_index=True)
 
         output = BytesIO()
-        writer = pd.ExcelWriter(output, engine="openpyxl")
-        bus_summary_df.to_excel(writer, sheet_name="Bus Performance", index=False)
-        subtotal_df.to_excel(writer, sheet_name="Daily Subtotals", index=False)
-        writer.close()
-
-        # Apply Styling
+        with pd.ExcelWriter(output, engine="openpyxl") as writer:
+            bus_summary_df.to_excel(writer, sheet_name="Bus Performance", index=False)
+            subtotal_df.to_excel(writer, sheet_name="Daily Subtotals", index=False)
+            weekly_summary_df.to_excel(writer, sheet_name="Weekly Subtotals", index=False)
+        
+        # Reload for styling
         output.seek(0)
+
         wb = load_workbook(output)
 
         header_fill = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
@@ -323,25 +436,26 @@ class ReportGenerator:
 
             is_bus_perf = sheet_name == "Bus Performance"
             is_daily = sheet_name == "Daily Subtotals"
+            is_weekly = sheet_name == "Weekly Subtotals"
 
-            # Cache header names once for number formatting lookups
+
             header_names = {cell.column: str(cell.value).upper() for cell in ws[1]}
 
             for row in ws.iter_rows(min_row=2, max_row=ws.max_row):
                 for cell in row:
                     cell.border = thin_border
 
-                bus_code = str(row[0].value) if is_bus_perf else (str(row[1].value) if is_daily else None)
+                label = str(row[0].value) if is_bus_perf or is_weekly else (str(row[1].value) if is_daily else None)
 
-                if bus_code in ("Grand Total", "Subtotal"):
+                if label in ("Grand Total", "Subtotal", "WEEKLY TOTAL"):
                     for cell in row:
                         cell.font = bold_font
                         cell.fill = subtotal_fill
-                elif is_bus_perf and bus_code:
-                    if bus_code.startswith("1"):
+                elif is_bus_perf and label:
+                    if label.startswith("1"):
                         for cell in row:
                             cell.fill = yellow_fill
-                    elif bus_code.startswith("2"):
+                    elif label.startswith("2"):
                         for cell in row:
                             cell.fill = blue_fill
 
@@ -369,7 +483,28 @@ class ReportGenerator:
         return final_output
 
     @staticmethod
-    def generate_pdf(analytics: AnalyticsResponse) -> BytesIO:
+    def generate_excel(analytics: AnalyticsResponse) -> BytesIO:
+        """Create a multi-sheet Excel report from AnalyticsResponse."""
+        if not analytics.records:
+            return ReportGenerator._create_excel_from_df(pd.DataFrame())
+        
+        records_data = [r.model_dump() for r in analytics.records]
+        df = pd.DataFrame(records_data)
+        return ReportGenerator._create_excel_from_df(df)
+
+    @staticmethod
+    def generate_excel_from_raw(records: list) -> BytesIO:
+        """Create a multi-sheet Excel report directly from DB records (no row cap)."""
+        if not records:
+            return ReportGenerator._create_excel_from_df(pd.DataFrame())
+        
+        # Convert list of named tuples/dicts to DataFrame
+        # Specify columns explicitly since with_entities returns Row objects
+        df = pd.DataFrame(records, columns=["id", "date", "fleet", "amount"])
+        return ReportGenerator._create_excel_from_df(df)
+
+    @staticmethod
+    def generate_pdf(analytics: AnalyticsResponse, start_date=None, end_date=None) -> BytesIO:
         """Create a PDF report."""
         output = BytesIO()
         doc = SimpleDocTemplate(output, pagesize=letter)
@@ -419,6 +554,30 @@ class ReportGenerator:
         else:
             elements.append(Paragraph("No data available", styles["Normal"]))
 
+        elements.append(Spacer(1, 20))
+        elements.append(Paragraph("Weekly Summary", styles["Heading2"]))
+        if analytics.weekly_subtotals:
+            data_w = [["Week Range", "PAX", "Revenue", "Remittance"]]
+            for w in analytics.weekly_subtotals:
+                data_w.append([
+                    w.week_range, 
+                    str(w.pax), 
+                    f"{w.total_revenue:,.2f}", 
+                    f"{w.remittance:,.2f}"
+                ])
+
+            t3 = Table(data_w)
+            t3.setStyle(TableStyle([
+                ("BACKGROUND", (0, 0), (-1, 0), colors.darkgreen),
+                ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+                ("GRID", (0, 0), (-1, -1), 1, colors.black),
+                ("ALIGN", (1, 0), (-1, -1), "RIGHT"),
+            ]))
+            elements.append(t3)
+        else:
+            elements.append(Paragraph("No weekly data available", styles["Normal"]))
+
         doc.build(elements)
         output.seek(0)
         return output
+

@@ -17,14 +17,17 @@ import {
     DialogContent,
     DialogActions,
     TextField,
-    MenuItem
+    MenuItem,
+    CircularProgress
 } from '@mui/material';
-import { Delete, Edit } from '@mui/icons-material';
-import api from '../services/api';
+import { Delete, Edit, LockOpen } from '@mui/icons-material';
+import { useAuth } from '../context/AuthContext';
 import { useSnackbar } from 'notistack';
+import api from '../services/api';
 
 const UserManagement = () => {
     const [users, setUsers] = useState([]);
+    const [loading, setLoading] = useState(true);
     const [openDialog, setOpenDialog] = useState(false);
     const [selectedUser, setSelectedUser] = useState(null);
     const [editRole, setEditRole] = useState('user');
@@ -34,14 +37,16 @@ const UserManagement = () => {
     const [userToDelete, setUserToDelete] = useState(null);
 
     const { enqueueSnackbar } = useSnackbar();
+    const { user: currentUser } = useAuth();
 
     const fetchUsers = async () => {
         try {
             const res = await api.get('/auth/users');
             setUsers(res.data);
-        } catch (error) {
-            console.error(error);
+        } catch {
             enqueueSnackbar('Failed to fetch users', { variant: 'error' });
+        } finally {
+            setLoading(false);
         }
     };
 
@@ -62,7 +67,7 @@ const UserManagement = () => {
             fetchUsers();
             setDeleteDialogOpen(false);
             setUserToDelete(null);
-        } catch (error) {
+        } catch {
             enqueueSnackbar('Failed to delete user', { variant: 'error' });
         }
     };
@@ -73,13 +78,23 @@ const UserManagement = () => {
         setOpenDialog(true);
     };
 
+    const handleUnlock = async (id) => {
+        try {
+            await api.post(`/auth/users/${id}/unlock`);
+            enqueueSnackbar('User unlocked', { variant: 'success' });
+            fetchUsers();
+        } catch {
+            enqueueSnackbar('Failed to unlock user', { variant: 'error' });
+        }
+    };
+
     const handleSave = async () => {
         try {
             await api.put(`/auth/users/${selectedUser.id}`, { role: editRole });
             enqueueSnackbar('User updated', { variant: 'success' });
             setOpenDialog(false);
             fetchUsers();
-        } catch (error) {
+        } catch {
             enqueueSnackbar('Failed to update user', { variant: 'error' });
         }
     };
@@ -87,6 +102,11 @@ const UserManagement = () => {
     return (
         <Box>
             <Typography variant="h4" sx={{ mb: 4, fontWeight: 800 }}>User Management</Typography>
+            {loading ? (
+                <Box sx={{ display: 'flex', justifyContent: 'center', py: 8 }}>
+                    <CircularProgress />
+                </Box>
+            ) : (
             <Paper sx={{ borderRadius: 3, overflow: 'hidden' }}>
                 <TableContainer>
                     <Table>
@@ -96,6 +116,7 @@ const UserManagement = () => {
                                 <TableCell>Username</TableCell>
                                 <TableCell>Account ID</TableCell>
                                 <TableCell>Role</TableCell>
+                                <TableCell>Status</TableCell>
                                 <TableCell align="right">Actions</TableCell>
                             </TableRow>
                         </TableHead>
@@ -112,13 +133,27 @@ const UserManagement = () => {
                                             size="small"
                                         />
                                     </TableCell>
+                                    <TableCell>
+                                        {user.is_locked ? (
+                                            <Chip label="Locked" color="error" size="small" variant="outlined" />
+                                        ) : (
+                                            <Chip label="Active" color="success" size="small" variant="outlined" />
+                                        )}
+                                    </TableCell>
                                     <TableCell align="right">
+                                        {user.is_locked && (
+                                            <IconButton onClick={() => handleUnlock(user.id)} size="small" color="warning">
+                                                <LockOpen fontSize="small" />
+                                            </IconButton>
+                                        )}
                                         <IconButton onClick={() => handleEdit(user)} size="small" color="primary">
                                             <Edit fontSize="small" />
                                         </IconButton>
-                                        <IconButton onClick={() => handleDelete(user.id)} size="small" color="error">
-                                            <Delete fontSize="small" />
-                                        </IconButton>
+                                        {currentUser?.id !== user.id && (
+                                            <IconButton onClick={() => handleDelete(user.id)} size="small" color="error">
+                                                <Delete fontSize="small" />
+                                            </IconButton>
+                                        )}
                                     </TableCell>
                                 </TableRow>
                             ))}
@@ -126,6 +161,7 @@ const UserManagement = () => {
                     </Table>
                 </TableContainer>
             </Paper>
+            )}
 
             <Dialog open={openDialog} onClose={() => setOpenDialog(false)}>
                 <DialogTitle>Edit User Role</DialogTitle>

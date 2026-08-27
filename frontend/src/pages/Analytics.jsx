@@ -10,10 +10,11 @@ import {
     Tooltip,
     Legend,
     ArcElement,
+    Filler,
 } from 'chart.js';
 import { Line, Bar, Pie } from 'react-chartjs-2';
 import { Box, Typography, Paper, Grid, TextField, MenuItem, Button, CircularProgress, Chip, Stack, Divider } from '@mui/material';
-import { FilterList, Download, Email, TrendingUp as TrendingUpIcon, ShowChart, Insights } from '@mui/icons-material';
+import { Download, Email, TrendingUp as TrendingUpIcon, ShowChart, Insights, Error as ErrorIcon } from '@mui/icons-material';
 import api from '../services/api';
 import { useSnackbar } from 'notistack';
 
@@ -27,7 +28,8 @@ ChartJS.register(
     Title,
     Tooltip,
     Legend,
-    ArcElement
+    ArcElement,
+    Filler
 );
 
 import { PageSkeleton } from '../components/common/PageSkeleton';
@@ -39,6 +41,7 @@ const Analytics = () => {
     const [availableFleets, setAvailableFleets] = useState([]);
 
     const [loading, setLoading] = useState(false);
+    const [sending, setSending] = useState(false);
     const [chartsData, setChartsData] = useState({
         revenue_trend: [],
         revenue_by_fleet: [],
@@ -53,8 +56,8 @@ const Analytics = () => {
             try {
                 const res = await api.get('/analytics/filters');
                 setAvailableFleets(res.data.fleets || []);
-            } catch (e) {
-                console.error("Failed to fetch filters", e);
+            } catch {
+                // Silently handle filter fetch errors
             }
         };
         fetchFilters();
@@ -73,8 +76,7 @@ const Analytics = () => {
                 // Use the new optimized endpoint
                 const response = await api.get('/analytics/charts', { params });
                 setChartsData(response.data);
-            } catch (error) {
-                console.error("Failed to fetch analytics", error);
+            } catch {
                 enqueueSnackbar('Failed to load analytics data', { variant: 'error' });
             } finally {
                 setLoading(false);
@@ -148,6 +150,62 @@ const Analytics = () => {
         }]
     };
 
+    const handleDownload = async () => {
+        try {
+            const params = new URLSearchParams();
+            if (startDate) params.append('start_date', startDate);
+            if (endDate) params.append('end_date', endDate);
+            if (selectedFleet !== 'All') params.append('fleets', selectedFleet);
+
+            const response = await api.get(`/analytics/download/excel`, {
+                params,
+                responseType: 'blob'
+            });
+
+            const url = window.URL.createObjectURL(response.data);
+            const link = document.createElement('a');
+            link.href = url;
+            link.setAttribute('download', `Fleet_Analytics_${new Date().toISOString().split('T')[0]}.xlsx`);
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+
+            enqueueSnackbar(`EXCEL report downloaded successfully`, { variant: 'success' });
+        } catch {
+            enqueueSnackbar(`Failed to download EXCEL report`, { variant: 'error' });
+        }
+    };
+
+    const topFleetInsight = React.useMemo(() => {
+        const fleets = chartsData.revenue_by_fleet;
+        if (!fleets || fleets.length === 0) {
+            return 'AI Insight: No fleet data available for the selected filters.';
+        }
+        const avg = fleets.reduce((sum, s) => sum + s.value, 0) / fleets.length;
+        if (avg <= 0) return 'AI Insight: No revenue recorded for the selected period.';
+        const top = fleets.reduce((max, s) => (s.value > max.value ? s : max), fleets[0]);
+        const pct = Math.round(((top.value - avg) / avg) * 100);
+        return `AI Insight: Fleet ${top.label} leads with ${pct}% above the average fleet revenue.`;
+    }, [chartsData]);
+
+    const handleEmailReport = async () => {
+        try {
+            setSending(true);
+            const params = new URLSearchParams();
+            if (startDate) params.append('start_date', startDate);
+            if (endDate) params.append('end_date', endDate);
+            if (selectedFleet !== 'All') params.append('fleets', selectedFleet);
+
+            const res = await api.post(`/analytics/email-report?${params.toString()}`);
+            enqueueSnackbar(res.data.message || 'Report emailed successfully', { variant: 'success' });
+        } catch (error) {
+            const detail = error.response?.data?.detail;
+            enqueueSnackbar(detail || 'Failed to email report', { variant: 'error' });
+        } finally {
+            setSending(false);
+        }
+    };
+
     const handleChartClick = (event, elements) => {
         if (elements && elements.length > 0) {
             const index = elements[0].index;
@@ -203,9 +261,9 @@ const Analytics = () => {
 
     return (
         <Box>
-            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 4 }}>
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 4, flexWrap: 'wrap', gap: 2 }}>
                 <Box>
-                    <Typography variant="h4" sx={{ fontWeight: 900, color: '#1e293b', letterSpacing: '-0.02em' }}>
+                    <Typography variant="h4" sx={{ fontWeight: 900, color: 'text.primary', letterSpacing: '-0.02em' }}>
                         Performance Insights
                     </Typography>
                     <Typography variant="body1" color="textSecondary">
@@ -216,16 +274,18 @@ const Analytics = () => {
                     <Button
                         variant="outlined"
                         startIcon={<Download />}
-                        onClick={() => window.open(`${api.defaults.baseURL}/analytics/download/excel`, '_blank')}
+                        onClick={handleDownload}
+                        disabled={loading}
                     >
                         Export Excel
                     </Button>
                     <Button
                         variant="contained"
                         startIcon={<Email />}
-                        onClick={() => enqueueSnackbar('Email report triggered', { variant: 'info' })}
+                        onClick={handleEmailReport}
+                        disabled={loading || sending}
                     >
-                        Send Email Report
+                        {sending ? 'Sending...' : 'Send Email Report'}
                     </Button>
                 </Stack>
             </Box>
@@ -234,7 +294,7 @@ const Analytics = () => {
             <Paper sx={{ p: 2, mb: 4, bgcolor: 'primary.light', color: 'primary.contrastText', borderRadius: 4, display: 'flex', alignItems: 'center', gap: 2 }}>
                 <Insights />
                 <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                    AI Insight: Fleet {chartsData.top_fleets[0]?.label || '...'} is currently outperforming the average by 24% this week.
+                    {topFleetInsight}
                 </Typography>
             </Paper>
 

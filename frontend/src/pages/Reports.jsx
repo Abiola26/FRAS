@@ -23,7 +23,7 @@ import {
     DialogContentText,
     DialogTitle
 } from '@mui/material';
-import { Download, FilterList, Delete } from '@mui/icons-material';
+import { Download, Delete, Edit as EditIcon } from '@mui/icons-material';
 import api from '../services/api';
 import { useSnackbar } from 'notistack';
 import { useAuth } from '../context/AuthContext';
@@ -40,7 +40,10 @@ const Reports = () => {
         daily_subtotals: [],
         dashboard_stats: { total_revenue: 0 }
     });
+
+
     const [loading, setLoading] = useState(false);
+    const [downloading, setDownloading] = useState(false);
     const [page, setPage] = useState(0);
     const [rowsPerPage, setRowsPerPage] = useState(50);
 
@@ -48,6 +51,10 @@ const Reports = () => {
     const [openDialog, setOpenDialog] = useState(false);
     const [deleteType, setDeleteType] = useState(null); // 'single' or 'batch'
     const [recordToDelete, setRecordToDelete] = useState(null);
+
+    // Record editing state
+    const [editRecord, setEditRecord] = useState(null); // { id, date, fleet, amount }
+    const [editSaving, setEditSaving] = useState(false);
 
     const [recordPage, setRecordPage] = useState(0);
     const [recordRowsPerPage, setRecordRowsPerPage] = useState(50);
@@ -62,8 +69,8 @@ const Reports = () => {
             try {
                 const res = await api.get('/analytics/filters');
                 setAvailableFleets(res.data.fleets || []);
-            } catch (e) {
-                console.error("Failed to fetch filters", e);
+            } catch {
+                // Silently handle filter fetch errors
             }
         };
         fetchFilters();
@@ -81,8 +88,7 @@ const Reports = () => {
 
                 const response = await api.get('/analytics/summary', { params });
                 setData(response.data);
-            } catch (error) {
-                console.error("Failed to fetch reports", error);
+            } catch {
                 enqueueSnackbar('Failed to load report data', { variant: 'error' });
             } finally {
                 setLoading(false);
@@ -122,6 +128,34 @@ const Reports = () => {
         setOpenDialog(true);
     };
 
+    const handleEditClick = (row) => {
+        setEditRecord({
+            id: row.id,
+            date: typeof row.date === 'string' ? row.date.slice(0, 10) : '',
+            fleet: row.fleet,
+            amount: row.amount
+        });
+    };
+
+    const handleEditSave = async () => {
+        try {
+            setEditSaving(true);
+            await api.put(`/fleet/${editRecord.id}`, {
+                date: editRecord.date,
+                fleet: editRecord.fleet.trim(),
+                amount: parseFloat(editRecord.amount)
+            });
+            enqueueSnackbar('Record updated successfully', { variant: 'success' });
+            setEditRecord(null);
+            refreshData();
+        } catch (error) {
+            const detail = error.response?.data?.detail;
+            enqueueSnackbar(detail || 'Failed to update record', { variant: 'error' });
+        } finally {
+            setEditSaving(false);
+        }
+    };
+
     const handleConfirmDelete = async () => {
         setOpenDialog(false);
 
@@ -130,9 +164,8 @@ const Reports = () => {
                 await api.delete(`/fleet/${recordToDelete}`);
                 enqueueSnackbar('Record deleted successfully', { variant: 'success' });
                 refreshData();
-            } catch (error) {
-                console.error(error);
-                enqueueSnackbar('Failed to delete record', { variant: 'error' });
+        } catch {
+            enqueueSnackbar('Failed to delete record', { variant: 'error' });
             }
         } else if (deleteType === 'batch') {
             setLoading(true);
@@ -145,9 +178,8 @@ const Reports = () => {
                 const res = await api.delete('/fleet/batch', { params });
                 enqueueSnackbar(res.data.message || 'Records deleted', { variant: 'success' });
                 refreshData();
-            } catch (e) {
-                console.error(e);
-                enqueueSnackbar('Failed to delete records', { variant: 'error' });
+        } catch {
+            enqueueSnackbar('Failed to delete records', { variant: 'error' });
             } finally {
                 setLoading(false);
             }
@@ -162,41 +194,76 @@ const Reports = () => {
         try {
             const response = await api.get('/analytics/summary', { params });
             setData(response.data);
-        } catch (error) {
-            console.error(error);
+        } catch {
+            // Silently handle refresh errors
         }
     };
 
     const handleDownload = async (type) => {
+        setDownloading(true);
         try {
-            const params = new URLSearchParams();
-            if (startDate) params.append('start_date', startDate);
-            if (endDate) params.append('end_date', endDate);
-            if (selectedFleet !== 'All') params.append('fleets', selectedFleet);
+            // Build params as a plain object so axios reliably serializes them,
+            // especially when combined with responseType: 'blob'.
+            const params = {};
+            if (startDate) params.start_date = startDate;
+            if (endDate) params.end_date = endDate;
+            if (selectedFleet !== 'All') params.fleets = selectedFleet;
 
             const response = await api.get(`/analytics/download/${type}`, {
                 params,
                 responseType: 'blob'
             });
 
-            const url = window.URL.createObjectURL(new Blob([response.data]));
+            // response.data is already a Blob when responseType is 'blob'
+            // Do NOT wrap it in new Blob([...]) — that can corrupt binary files
+            const url = window.URL.createObjectURL(response.data);
             const link = document.createElement('a');
+
+            // Use the filename from Content-Disposition header if available,
+            // otherwise fall back to a descriptive name based on active filters.
+            const disposition = response.headers['content-disposition'];
+            let filename;
+            if (disposition) {
+                const match = disposition.match(/filename[^;=\n]*=((['"]).+?\2|[^;\n]*)/);
+                filename = match ? match[1].replace(/["']/g, '') : null;
+            }
+            if (!filename) {
+                const fromLabel = startDate || 'all';
+                const toLabel = endDate || 'all';
+                const ext = type === 'excel' ? 'xlsx' : 'pdf';
+                filename = `Fleet_Report_${fromLabel}_to_${toLabel}.${ext}`;
+            }
+
             link.href = url;
-            link.setAttribute('download', `Fleet_Report_${new Date().toISOString().split('T')[0]}.${type === 'excel' ? 'xlsx' : 'pdf'}`);
+            link.setAttribute('download', filename);
             document.body.appendChild(link);
             link.click();
             link.remove();
+            window.URL.revokeObjectURL(url);
 
             enqueueSnackbar(`${type.toUpperCase()} report downloaded successfully`, { variant: 'success' });
         } catch (error) {
-            console.error(error);
-            enqueueSnackbar(`Failed to download ${type} report`, { variant: 'error' });
+            // When responseType is 'blob', error.response.data is also a Blob.
+            // Convert it to text so we can show a meaningful error message.
+            let message = `Failed to download ${type} report`;
+            if (error.response && error.response.data instanceof Blob) {
+                try {
+                    const text = await error.response.data.text();
+                    const json = JSON.parse(text);
+                    if (json.detail) message = json.detail;
+                } catch {
+                    // ignore parse errors, use default message
+                }
+            }
+            enqueueSnackbar(message, { variant: 'error' });
+        } finally {
+            setDownloading(false);
         }
     };
 
     return (
         <Box>
-            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 4 }}>
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 4, flexWrap: 'wrap', gap: 2 }}>
                 <Box>
                     <Typography variant="h4" sx={{ fontWeight: 800, color: 'text.primary' }}>
                         Reports
@@ -219,11 +286,11 @@ const Reports = () => {
                     )}
                     <Button
                         variant="outlined"
-                        startIcon={<Download />}
+                        startIcon={downloading ? <CircularProgress size={16} /> : <Download />}
                         onClick={() => handleDownload('excel')}
-                        disabled={loading}
+                        disabled={loading || downloading}
                     >
-                        Export Excel
+                        {downloading ? 'Downloading...' : 'Export Excel'}
                     </Button>
                 </Box>
             </Box>
@@ -267,11 +334,7 @@ const Reports = () => {
                             size="small"
                         />
                     </Grid>
-                    <Grid item xs={12} md={3} sx={{ textAlign: 'right' }}>
-                        <Button startIcon={<FilterList />} color="inherit">
-                            More Filters
-                        </Button>
-                    </Grid>
+                    <Grid item xs={12} md={3} />
                 </Grid>
             </Paper>
 
@@ -342,6 +405,8 @@ const Reports = () => {
             <Typography variant="h6" sx={{ mb: 2, fontWeight: 700, color: 'text.primary', mt: 4 }}>
                 Detailed Records
             </Typography>
+
+
             <Paper sx={{ width: '100%', overflow: 'hidden', borderRadius: 3, boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}>
                 <TableContainer sx={{ maxHeight: 600 }}>
                     <Table stickyHeader size="small">
@@ -362,6 +427,9 @@ const Reports = () => {
                                         <TableCell align="right">₦{row.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</TableCell>
                                         {isAdmin && (
                                             <TableCell align="center">
+                                                <IconButton size="small" onClick={() => handleEditClick(row)} color="primary">
+                                                    <EditIcon fontSize="small" />
+                                                </IconButton>
                                                 <IconButton size="small" onClick={() => handleDeleteClick(row.id)} color="error">
                                                     <Delete fontSize="small" />
                                                 </IconButton>
@@ -410,6 +478,55 @@ const Reports = () => {
                     </Button>
                     <Button onClick={handleConfirmDelete} color="error" variant="contained">
                         Delete
+                    </Button>
+                </DialogActions>
+            </Dialog>
+
+            {/* Edit Record Dialog */}
+            <Dialog open={Boolean(editRecord)} onClose={() => setEditRecord(null)}>
+                <DialogTitle>Edit Record #{editRecord?.id}</DialogTitle>
+                <DialogContent>
+                    <Grid container spacing={2} sx={{ pt: 1 }}>
+                        <Grid item xs={12}>
+                            <TextField
+                                label="Date"
+                                type="date"
+                                fullWidth
+                                value={editRecord?.date || ''}
+                                onChange={(e) => setEditRecord({ ...editRecord, date: e.target.value })}
+                                InputLabelProps={{ shrink: true }}
+                            />
+                        </Grid>
+                        <Grid item xs={12}>
+                            <TextField
+                                label="Fleet"
+                                fullWidth
+                                required
+                                value={editRecord?.fleet || ''}
+                                onChange={(e) => setEditRecord({ ...editRecord, fleet: e.target.value })}
+                            />
+                        </Grid>
+                        <Grid item xs={12}>
+                            <TextField
+                                label="Amount"
+                                type="number"
+                                fullWidth
+                                required
+                                inputProps={{ min: 0, step: '0.01' }}
+                                value={editRecord?.amount ?? ''}
+                                onChange={(e) => setEditRecord({ ...editRecord, amount: e.target.value })}
+                            />
+                        </Grid>
+                    </Grid>
+                </DialogContent>
+                <DialogActions>
+                    <Button onClick={() => setEditRecord(null)}>Cancel</Button>
+                    <Button
+                        onClick={handleEditSave}
+                        variant="contained"
+                        disabled={editSaving || !editRecord?.date || !editRecord?.fleet?.trim() || editRecord.amount === '' || isNaN(parseFloat(editRecord.amount))}
+                    >
+                        {editSaving ? 'Saving...' : 'Save Changes'}
                     </Button>
                 </DialogActions>
             </Dialog>

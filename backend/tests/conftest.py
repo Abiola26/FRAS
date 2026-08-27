@@ -7,7 +7,9 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
+import main
 from app.database import Base, get_db
+from app.utils import common as utils_common
 from main import app
 
 # Use SQLite for testing
@@ -38,6 +40,14 @@ def client(db):
         finally:
             pass
     app.dependency_overrides[get_db] = override_get_db
+
+    # Code that opens sessions directly (not via get_db) must also hit the test DB:
+    # - main.SessionLocal/engine: maintenance-mode middleware + lifespan create_all
+    # - utils.common.SessionLocal: get_system_config (remittance settings)
+    main.SessionLocal = TestingSessionLocal
+    main.engine = engine
+    utils_common.SessionLocal = TestingSessionLocal
+
     with TestClient(app) as c:
         yield c
     app.dependency_overrides.clear()

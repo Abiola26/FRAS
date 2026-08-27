@@ -1,11 +1,14 @@
 """
 Analytics and Reporting Routes
 """
+import logging
 from datetime import date
+from io import BytesIO
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, status
 from fastapi.responses import StreamingResponse
+from starlette.datastructures import Headers
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
@@ -16,13 +19,14 @@ from app.schemas import AnalyticsResponse, ChartDataPoint, ChartResponse, Dashbo
 from app.utils import DataProcessor, ReportGenerator
 
 router = APIRouter(prefix="/analytics", tags=["Analytics & Reporting"])
+logger = logging.getLogger(__name__)
 
 
 def get_filtered_query(
     db: Session,
     start_date: Optional[date] = None,
     end_date: Optional[date] = None,
-    fleets: Optional[list[str]] = Query(None),
+    fleets: Optional[list[str]] = None,
     limit: Optional[int] = None,
 ):
     """Apply date/fleet filters to fleet query and return ordered query."""
@@ -188,17 +192,22 @@ def download_excel_report(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Download analytics report as Excel."""
+    """Download analytics report as Excel (all filtered records, no row cap)."""
     query = get_filtered_query(db, start_date, end_date, fleets)
+    # Fetch ALL matching records — do NOT pass through process_analytics which caps at 2000
     records = query.with_entities(FleetRecord.id, FleetRecord.date, FleetRecord.fleet, FleetRecord.amount).all()
-    analytics = DataProcessor.process_analytics(records)
-    excel_file = ReportGenerator.generate_excel(analytics)
+    excel_file = ReportGenerator.generate_excel_from_raw(records)
 
-    filename = f"Fleet_Report_{date.today()}.xlsx"
+    from_label = str(start_date) if start_date else "all"
+    to_label = str(end_date) if end_date else "all"
+    filename = f"Fleet_Report_{from_label}_to_{to_label}.xlsx"
     return StreamingResponse(
-        excel_file,
+        iter([excel_file.getvalue()]),
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": f"attachment; filename={filename}"},
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Access-Control-Expose-Headers": "Content-Disposition"
+        },
     )
 
 
@@ -210,17 +219,23 @@ def download_pdf_report(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Download analytics report as PDF."""
+    """Download analytics report as PDF (all filtered records, no row cap)."""
     query = get_filtered_query(db, start_date, end_date, fleets)
+    # Fetch ALL matching records — do NOT pass through process_analytics which caps at 2000
     records = query.with_entities(FleetRecord.id, FleetRecord.date, FleetRecord.fleet, FleetRecord.amount).all()
-    analytics = DataProcessor.process_analytics(records)
-    pdf_file = ReportGenerator.generate_pdf(analytics)
+    analytics = DataProcessor.process_analytics(records)  # still needed for PDF summary stats
+    pdf_file = ReportGenerator.generate_pdf(analytics, start_date=start_date, end_date=end_date)
 
-    filename = f"Fleet_Report_{date.today()}.pdf"
+    from_label = str(start_date) if start_date else "all"
+    to_label = str(end_date) if end_date else "all"
+    filename = f"Fleet_Report_{from_label}_to_{to_label}.pdf"
     return StreamingResponse(
-        pdf_file,
+        iter([pdf_file.getvalue()]),
         media_type="application/pdf",
-        headers={"Content-Disposition": f"attachment; filename={filename}"},
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Access-Control-Expose-Headers": "Content-Disposition"
+        },
     )
 
 
@@ -270,9 +285,19 @@ async def email_report(
     message = MessageSchema(
         subject=f"Fleet Analytics Report - {today}",
         recipients=[recipient],
-        item_objects=[
-            (f"Report_{today}.pdf", pdf_io.getvalue(), "application/pdf"),
-            (f"Data_{today}.xlsx", xlsx_io.getvalue(), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
+        attachments=[
+            UploadFile(
+                file=BytesIO(pdf_io.getvalue()),
+                filename=f"Report_{today}.pdf",
+                headers=Headers({"content-type": "application/pdf"}),
+            ),
+            UploadFile(
+                file=BytesIO(xlsx_io.getvalue()),
+                filename=f"Data_{today}.xlsx",
+                headers=Headers(
+                    {"content-type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"}
+                ),
+            ),
         ],
         body=f"Please find attached the fleet analytics report for {today}.",
         subtype=MessageType.html,
@@ -282,8 +307,9 @@ async def email_report(
     try:
         await fm.send_message(message)
         return {"message": f"Report sent to {recipient}"}
-    except Exception as e:
+    except Exception:
+        logger.exception("Failed to send email report to %s", recipient)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to send email: {e}",
+            detail="Failed to send email. Please check your mail configuration.",
         )

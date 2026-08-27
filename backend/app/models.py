@@ -3,8 +3,7 @@ Database models
 """
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, Column, Date, DateTime, Float, Integer, String
-from sqlalchemy.orm import relationship
+from sqlalchemy import Boolean, Column, Date, DateTime, Float, Integer, String, Index
 
 from .database import Base
 
@@ -33,12 +32,17 @@ class User(Base):
 class FleetRecord(Base):
     """Fleet record model for storing fleet data."""
     __tablename__ = "fleet_records"
+    __table_args__ = (
+        Index("ix_fleet_records_date_fleet", "date", "fleet"),
+        Index("ix_fleet_records_commuter_date_amount", "commuter_name", "date", "amount"),
+    )
 
     id = Column(Integer, primary_key=True, index=True)
     date = Column(Date, nullable=False, index=True)
     fleet = Column(String, nullable=False, index=True)
     amount = Column(Float, nullable=False)
     created_at = Column(DateTime(timezone=True), default=_now)
+    commuter_name = Column(String, nullable=True, index=True)
 
 
 class AuditLog(Base):
@@ -50,7 +54,7 @@ class AuditLog(Base):
     username = Column(String, nullable=True)
     action = Column(String, nullable=False, index=True)
     details = Column(String, nullable=True)
-    timestamp = Column(DateTime(timezone=True), default=_now)
+    timestamp = Column(DateTime(timezone=True), default=_now, index=True)
 
 
 class SystemSetting(Base):

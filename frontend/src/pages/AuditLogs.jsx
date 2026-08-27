@@ -10,7 +10,8 @@ import {
     TableHead,
     TableRow,
     Chip,
-    Button
+    Button,
+    CircularProgress
 } from '@mui/material';
 import { Download as DownloadIcon } from '@mui/icons-material';
 import api from '../services/api';
@@ -18,6 +19,7 @@ import { useSnackbar } from 'notistack';
 
 const AuditLogs = () => {
     const [logs, setLogs] = useState([]);
+    const [loading, setLoading] = useState(true);
     const { enqueueSnackbar } = useSnackbar();
 
     useEffect(() => {
@@ -25,23 +27,33 @@ const AuditLogs = () => {
             try {
                 const res = await api.get('/audit');
                 setLogs(res.data);
-            } catch (error) {
-                console.error(error);
+            } catch {
                 enqueueSnackbar('Failed to fetch audit logs', { variant: 'error' });
+            } finally {
+                setLoading(false);
             }
         };
         fetchLogs();
     }, []);
+
+    // Neutralize CSV formula injection (=, +, -, @ prefixes) and quote cells safely
+    const csvSafe = (value) => {
+        let v = String(value ?? '');
+        if (/^[=+\-@\t\r]/.test(v)) {
+            v = `'${v}`;
+        }
+        return `"${v.replace(/"/g, '""')}"`;
+    };
 
     const exportToCSV = () => {
         if (logs.length === 0) return;
         const headers = ['Timestamp,User,Action,Details'];
         const rows = logs.map(log => {
             const date = new Date(log.timestamp).toLocaleString().replace(/,/g, '');
-            return `${date},${log.username},${log.action},"${(log.details || '').replace(/"/g, '""')}"`;
+            return [date, log.username, log.action, log.details || ''].map(csvSafe).join(',');
         });
         const csvContent = headers.concat(rows).join('\n');
-        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const blob = new Blob([`\uFEFF${csvContent}`], { type: 'text/csv;charset=utf-8;' });
         const url = URL.createObjectURL(blob);
         const link = document.createElement('a');
         link.setAttribute('href', url);
@@ -54,7 +66,7 @@ const AuditLogs = () => {
 
     return (
         <Box>
-            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 4 }}>
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 4, flexWrap: 'wrap', gap: 2 }}>
                 <Typography variant="h4" sx={{ fontWeight: 800 }}>Audit Logs</Typography>
                 <Button
                     variant="outlined"
@@ -65,6 +77,11 @@ const AuditLogs = () => {
                     Export CSV
                 </Button>
             </Box>
+            {loading ? (
+                <Box sx={{ display: 'flex', justifyContent: 'center', py: 8 }}>
+                    <CircularProgress />
+                </Box>
+            ) : (
             <Paper sx={{ borderRadius: 3, overflow: 'hidden' }}>
                 <TableContainer sx={{ maxHeight: '75vh' }}>
                     <Table stickyHeader>
@@ -102,6 +119,7 @@ const AuditLogs = () => {
                     </Table>
                 </TableContainer>
             </Paper>
+            )}
         </Box>
     );
 };

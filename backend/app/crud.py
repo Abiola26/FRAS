@@ -6,7 +6,7 @@ from typing import Optional
 
 from sqlalchemy.orm import Session
 
-from .auth import get_password_hash, verify_password
+from .auth import get_password_hash
 from .models import AuditLog, FleetRecord, Notification, User
 from .schemas import FleetRecordBase
 from .utils import generate_account_id

@@ -2,6 +2,7 @@
 Pydantic schemas for request/response validation
 """
 from datetime import date, datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -11,7 +12,7 @@ class UserCreate(BaseModel):
     username: str = Field(..., min_length=3, max_length=50)
     email: str | None = Field(None, pattern=r'^\S+@\S+\.\S+$')
     password: str = Field(..., min_length=6)
-    role: str = "user"
+    role: Literal["admin", "user"] = "user"
 
 
 class UserPasswordChange(BaseModel):
@@ -50,9 +51,10 @@ class PasswordResetConfirm(BaseModel):
 
 class FleetRecordBase(BaseModel):
     """Base schema for fleet record."""
+    commuter_name: str | None = Field(None, max_length=100)
     date: date
-    fleet: str = Field(..., min_length=1)
-    amount: float = Field(..., ge=0)
+    fleet: str = Field(..., min_length=1, max_length=50)
+    amount: float = Field(..., ge=0, le=100_000_000)
 
 
 class FleetRecordOut(FleetRecordBase):
@@ -76,6 +78,15 @@ class DailySubtotal(BaseModel):
     fleet: str
     daily_total: float
     pax: int
+
+
+class WeeklySubtotal(BaseModel):
+    """Schema for weekly performance summary."""
+    week_range: str
+    total_revenue: float
+    pax: int
+    remittance: float = 0.0
+
 
 
 class DashboardStats(BaseModel):
@@ -109,8 +120,10 @@ class AnalyticsResponse(BaseModel):
     records: list[FleetRecordOut]
     fleet_summaries: list[FleetSummary]
     daily_subtotals: list[DailySubtotal]
+    weekly_subtotals: list[WeeklySubtotal] = []
     dashboard_stats: DashboardStats
     anomalies: list[Anomaly] = []
+
 
 
 class ChartDataPoint(BaseModel):
@@ -141,13 +154,13 @@ class UserUpdate(BaseModel):
     """Schema for updating user role/details."""
     username: str | None = Field(None, min_length=3, max_length=50)
     email: str | None = Field(None, pattern=r'^\S+@\S+\.\S+$')
-    role: str | None = None
+    role: Literal["admin", "user"] | None = None
     account_id: str | None = None
 
 
 class SystemSettingBase(BaseModel):
-    key: str
-    value: str
+    key: str = Field(..., max_length=100)
+    value: str = Field(..., max_length=500)
     description: str | None = None
 
 
@@ -162,7 +175,7 @@ class NotificationOut(BaseModel):
     user_id: int | None
     title: str
     message: str
-    type: str
+    type: Literal["info", "warning", "success", "error"]
     is_read: bool
     created_at: datetime
 

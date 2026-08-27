@@ -2,7 +2,7 @@
 Fleet record management routes
 """
 from datetime import date
-from typing import List, Optional
+from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
@@ -38,7 +38,7 @@ def create_record(
     return record
 
 
-@router.get("/", response_model=List[FleetRecordOut])
+@router.get("/", response_model=list[FleetRecordOut])
 def get_records(
     skip: int = 0,
     limit: int = 50,

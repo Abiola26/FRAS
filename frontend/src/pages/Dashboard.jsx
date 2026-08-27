@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-    Typography, Grid, Paper, Box, CircularProgress, Alert,
+    Typography, Grid, Paper, Box, Alert,
     List, ListItem, ListItemText, ListItemIcon, Divider, Button,
     Skeleton, Avatar, useTheme
 } from '@mui/material';
@@ -104,7 +104,6 @@ const Dashboard = () => {
                 setRecentLogs([]);
             }
         } catch (err) {
-            console.error('Error fetching dashboard data:', err);
             const errorMessage = err.response?.data?.detail || 'Failed to load dashboard data';
             setError(errorMessage);
             enqueueSnackbar(errorMessage, { variant: 'error' });
@@ -147,7 +146,7 @@ const Dashboard = () => {
                         title="Total Revenue"
                         value={formatCurrency(stats?.total_revenue || 0)}
                         icon={<TrendingUp />}
-                        color="#2563eb"
+                        color="info.main"
                         loading={loading}
                     />
                 </Grid>
@@ -156,7 +155,7 @@ const Dashboard = () => {
                         title="Total Records"
                         value={stats?.total_records || 0}
                         icon={<Description />}
-                        color="#7c3aed"
+                        color="secondary.main"
                         loading={loading}
                     />
                 </Grid>
@@ -165,7 +164,7 @@ const Dashboard = () => {
                         title="Predicted / Day"
                         value={formatCurrency(stats?.predicted_revenue || 0)}
                         icon={<AutoGraph />}
-                        color="#0891b2"
+                        color="info.dark"
                         loading={loading}
                     />
                 </Grid>
@@ -174,7 +173,7 @@ const Dashboard = () => {
                         title="Top Fleet"
                         value={stats?.top_performing_fleet || 'N/A'}
                         icon={<LocalShipping />}
-                        color="#059669"
+                        color="success.main"
                         loading={loading}
                     />
                 </Grid>

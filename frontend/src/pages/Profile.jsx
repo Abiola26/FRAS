@@ -8,10 +8,9 @@ import {
     Button,
     Avatar,
     Divider,
-    Alert,
     LinearProgress
 } from '@mui/material';
-import { Person, Lock, Save } from '@mui/icons-material';
+import { Lock, Save } from '@mui/icons-material';
 import { useAuth } from '../context/AuthContext';
 import api from '../services/api';
 import authService from '../services/authService';
@@ -102,7 +101,7 @@ const Profile = () => {
     return (
         <Box maxWidth="lg" sx={{ mx: 'auto' }}>
             <Box sx={{ mb: 4 }}>
-                <Typography variant="h4" sx={{ fontWeight: 800, color: '#1e293b' }}>
+                <Typography variant="h4" sx={{ fontWeight: 800, color: 'text.primary' }}>
                     My Profile
                 </Typography>
                 <Typography variant="body1" color="textSecondary">

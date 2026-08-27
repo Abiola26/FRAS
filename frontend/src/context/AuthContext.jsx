@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components */
 import React, { createContext, useState, useContext, useEffect } from 'react';
 import authService from '../services/authService';
 
@@ -18,8 +19,7 @@ export const AuthProvider = ({ children }) => {
                         // Token might be invalid
                         authService.logout();
                     }
-                } catch (error) {
-                    console.error("Auth init failed", error);
+                } catch {
                     authService.logout();
                 }
             }

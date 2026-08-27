@@ -8,6 +8,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from jose import jwt
+from sqlalchemy import text
 
 from app.config import get_settings
 from app.database import Base, SessionLocal, engine
@@ -115,7 +116,7 @@ def health_check():
     db_status = "healthy"
     try:
         db = SessionLocal()
-        db.execute("SELECT 1")
+        db.execute(text("SELECT 1"))
     except Exception as e:
         logger.error(f"Health check DB error: {e}")
         db_status = "unhealthy"
